@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "61191392694",
+    "project_id": "smarteducationanalyticssystem",
+    "storage_bucket": "smarteducationanalyticssystem.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:61191392694:android:c39d1ef68f7d10055a0517",
+        "android_client_info": {
+          "package_name": "com.ngo.education.ngo_education_platform"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDb47RUyanqSOkAbpvcCgcoPNFAkzoFsWY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+ui-debug.log
+firestore-debug.log
+pubsub-debug.log
+storage-debug.log
+
+# Environment
+*.local
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
