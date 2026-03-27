@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../../providers/data_provider.dart';
 import '../../layouts/admin_layout.dart';
 import '../../widgets/app_widgets.dart';
-import '../../theme/app_theme.dart';
 
 class AddCentre extends StatefulWidget {
   const AddCentre({super.key});

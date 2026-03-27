@@ -205,11 +205,15 @@ class _ManageStaffState extends State<ManageStaff> with SingleTickerProviderStat
               const SizedBox(height: 12),
               Row(
                 children: [
-                  Expanded(child: _leaveStat('Present', (item['presentCount'] ?? 0).toString(), Colors.green)),
+                  Expanded(child: _leaveStat('Attended', (item['presentCount'] ?? 0).toString(), Colors.green)),
                   const SizedBox(width: 12),
-                  Expanded(child: _leaveStat('Absent', ((item['absentCount'] ?? 0) + (item['dropoutCount'] ?? 0)).toString(), Colors.red)),
+                  Expanded(child: _leaveStat('Missed', (item['absentCount'] ?? 0).toString(), Colors.red)),
                 ],
               ),
+              if (item['presentCount'] == null) ...[
+                const SizedBox(height: 12),
+                Center(child: Text('Note: Tap "Sync" on dashboard to update attendance stats.', style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), fontStyle: FontStyle.italic))),
+              ],
             ],
             const SizedBox(height: 32),
           ],

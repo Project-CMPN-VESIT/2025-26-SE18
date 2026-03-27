@@ -125,5 +125,13 @@ service cloud.firestore {
       allow update, delete: if isAdmin()
                             || (isTeacher() && resource.data.teacherId == request.auth.uid);
     }
+
+    // ─── Announcements Collection ───────────────────────────────────
+
+    match /announcements/{annId} {
+      allow read: if isAdmin() || ((isCoordinator() || isTeacher()) && resource.data.zone == getUserZone());
+      allow create: if isCoordinator() || isAdmin();
+      allow delete: if isAdmin() || (isCoordinator() && resource.data.authorId == request.auth.uid);
+    }
   }
 }

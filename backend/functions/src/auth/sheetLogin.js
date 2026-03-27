@@ -43,12 +43,20 @@ exports.sheetLogin = onCall(async (request) => {
 
   try {
     // 1. Load all users from the NGO User Directory sheet
-    const sheetUsers = await readUsersFromSheet();
+    let sheetUsers;
+    try {
+      sheetUsers = await readUsersFromSheet();
+    } catch (e) {
+      return {
+        success: false,
+        message: e.message,
+      };
+    }
 
     if (!Array.isArray(sheetUsers) || sheetUsers.length === 0) {
       return {
         success: false,
-        message: "No users defined in NGO User Directory sheet.",
+        message: "NGO User Directory sheet is empty or contains no valid email addresses.",
       };
     }
 

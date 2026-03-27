@@ -10,7 +10,12 @@ exports.onCentreCreated = onDocumentCreated("centres/{centreId}", async (event) 
   if (!snapshot) return;
 
   const data = snapshot.data();
-  const { name, zone } = data;
+  const { name, zone, lastSyncSource } = data;
+
+  if (lastSyncSource === "google_sheets") {
+     console.log(`Skipping onCentreCreated for ${name} (Source: Google Sheets Sync)`);
+     return null;
+  }
 
   if (!name || !zone) {
     console.error("Missing name or zone in new centre document");

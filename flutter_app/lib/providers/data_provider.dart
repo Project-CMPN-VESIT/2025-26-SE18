@@ -17,6 +17,7 @@ class DataProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _examResults = [];
   List<Map<String, dynamic>> _diaryEntries = [];
   List<Map<String, dynamic>> _resources = [];
+  List<Map<String, dynamic>> _announcements = [];
 
   bool _isLoading = true;
   bool _initialized = false;
@@ -34,6 +35,7 @@ class DataProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get examResults => _examResults;
   List<Map<String, dynamic>> get diaryEntries => _diaryEntries;
   List<Map<String, dynamic>> get resources => _resources;
+  List<Map<String, dynamic>> get announcements => _announcements;
   bool get isLoading => _isLoading;
 
   /// Initialize Firestore listeners scoped by role.
@@ -45,7 +47,7 @@ class DataProvider extends ChangeNotifier {
 
     // Track how many streams have emitted their first value
     int streamsReady = 0;
-    const totalStreams = 9;
+    const totalStreams = 10;
     void onStreamReady() {
       streamsReady++;
       if (streamsReady >= totalStreams) {
@@ -150,6 +152,18 @@ class DataProvider extends ChangeNotifier {
     }
     _subscriptions.add(resourcesQuery.snapshots().listen((snap) {
       _resources = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
+      onStreamReady();
+    }));
+
+    // ─── Announcements ────────────────────────────────────────────
+    Query announcementsQuery = _db.collection('announcements');
+    if (role == 'teacher' || role == 'coordinator') {
+      if (effectiveZone != null) announcementsQuery = announcementsQuery.where('zone', isEqualTo: effectiveZone);
+    }
+    // Limit to 5 most recent
+    announcementsQuery = announcementsQuery.orderBy('createdAt', descending: true).limit(5);
+    _subscriptions.add(announcementsQuery.snapshots().listen((snap) {
+      _announcements = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
       onStreamReady();
     }));
   }
@@ -271,6 +285,26 @@ class DataProvider extends ChangeNotifier {
       ...record,
       'createdAt': FieldValue.serverTimestamp(),
     });
+    
+    // Update Student Global Stats & Consecutive Absences Trigger
+    final studentId = record['studentId'];
+    final status = record['status']; 
+    
+    if (studentId != null && studentId.toString().isNotEmpty) {
+      if (status == 'present') {
+        await _db.collection('students').doc(studentId).set({
+          'presentCount': FieldValue.increment(1),
+          'totalClasses': FieldValue.increment(1),
+          'consecutiveAbsences': 0,
+        }, SetOptions(merge: true));
+      } else if (status == 'absent' || status == 'dropout') {
+        await _db.collection('students').doc(studentId).set({
+          'absentCount': FieldValue.increment(1),
+          'totalClasses': FieldValue.increment(1),
+          'consecutiveAbsences': FieldValue.increment(1),
+        }, SetOptions(merge: true));
+      }
+    }
   }
 
   Future<void> addExamResult(Map<String, dynamic> exam) async {
@@ -280,6 +314,32 @@ class DataProvider extends ChangeNotifier {
     });
   }
 
+  // ─── ANNOUNCEMENTS ──────────────────────────────────────────────
+
+  Future<void> addAnnouncement(String message, String zone, String authorId, String authorName) async {
+    try {
+      await _db.collection('announcements').add({
+        'message': message,
+        'zone': zone,
+        'authorId': authorId,
+        'authorName': authorName,
+        'createdAt': DateTime.now().toIso8601String(),
+      });
+    } catch (e) {
+      debugPrint("Error creating announcement: \$e");
+      rethrow;
+    }
+  }
+
+  Future<void> deleteAnnouncement(String id) async {
+    try {
+      await _db.collection('announcements').doc(id).delete();
+    } catch (e) {
+      debugPrint("Error deleting announcement: \$e");
+      rethrow;
+    }
+  }
+
   /// Sync users from Google Sheet → Firebase Auth + Firestore
   Future<Map<String, dynamic>> syncUsersFromSheet() async {
     try {
@@ -287,6 +347,22 @@ class DataProvider extends ChangeNotifier {
       return Map<String, dynamic>.from(result.data as Map);
     } catch (e) {
       return {'created': 0, 'skipped': 0, 'errors': [e.toString()], 'message': 'Error: $e'};
+    }
+  }
+
+  /// Force manual sync of students from Google Sheet to Firestore
+  Future<Map<String, dynamic>> syncStudentsFromSheet({String? zone, String? centre}) async {
+    try {
+      final callable = _functions.httpsCallable('onStudentCreated');
+      final result = await callable.call({
+        'action': 'forceSync',
+        'zone': zone,
+        'centre': centre
+      });
+      return Map<String, dynamic>.from(result.data as Map);
+    } catch (e) {
+      debugPrint('Error syncing students from sheet: $e');
+      return {'success': false, 'message': e.toString()};
     }
   }
 

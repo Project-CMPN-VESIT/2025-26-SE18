@@ -13,22 +13,17 @@ class AnalyticsScreen extends StatelessWidget {
     final data = context.watch<DataProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Compute total students across all centres from Google Sheet sync
-    int totalStudents = 0;
-    for (var c in data.centres) {
-      final sheetCount = c['totalStudents'];
-      totalStudents += (sheetCount is int) ? sheetCount : (int.tryParse(sheetCount?.toString() ?? '0') ?? 0);
-    }
+    // Compute total students across all centres functionally
+    int totalStudents = data.students.length;
 
-    // Compute real average attendance across all centres
-    double attSum = 0;
-    int attCount = 0;
-    for (var c in data.centres) {
-      final attStr = c['attendance']?.toString() ?? '0%';
-      final val = double.tryParse(attStr.replaceAll('%', ''));
-      if (val != null) { attSum += val; attCount++; }
+    // Compute real average attendance logically across all loaded students
+    int overallTotalClasses = 0;
+    int overallTotalPresent = 0;
+    for (var s in data.students) {
+      overallTotalClasses += (s['totalClasses'] as int? ?? 0);
+      overallTotalPresent += (s['presentCount'] as int? ?? 0);
     }
-    final avgAttendance = attCount > 0 ? '${(attSum / attCount).toStringAsFixed(0)}%' : '0%';
+    final avgAttendance = overallTotalClasses > 0 ? '${(overallTotalPresent / overallTotalClasses * 100).toStringAsFixed(0)}%' : '0%';
 
     return CoordinatorLayout(
       child: Column(children: [
@@ -61,8 +56,15 @@ class AnalyticsScreen extends StatelessWidget {
               final c = data.centres[index];
               final centreName = c['name'] as String;
 
-              // Read overall attendance directly from the centre document
-              final avgAtt = c['attendance']?.toString() ?? '0%';
+              // Compute attendance dynamically for the centre
+              final centreStudents = data.students.where((s) => s['centre'] == centreName).toList();
+              int centreClasses = 0;
+              int centrePresent = 0;
+              for (var s in centreStudents) {
+                centreClasses += (s['totalClasses'] as int? ?? 0);
+                centrePresent += (s['presentCount'] as int? ?? 0);
+              }
+              final avgAtt = centreClasses > 0 ? '${(centrePresent / centreClasses * 100).toStringAsFixed(0)}%' : '0%';
 
               // Get Exams for this centre
               final centreExams = data.examResults.where((e) => e['centre'] == centreName).toList();

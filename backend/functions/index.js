@@ -32,6 +32,9 @@ const { onExamResultCreated } = require("./src/exams/onExamCreated");
 // Sync users from Google Sheet to Firebase Auth
 const { syncUsersFromSheet } = require("./src/auth/syncFromSheet");
 
+// Sync students from Google Sheet to Firestore
+const { syncStudentsFromSheet } = require("./src/students/syncStudents");
+
 // Login validation against NGO User Directory Google Sheet
 const { sheetLogin } = require("./src/auth/sheetLogin");
 
@@ -52,4 +55,5 @@ exports.getStudentsFromSheet = getStudentsFromSheet;
 exports.getAttendanceFromSheet = getAttendanceFromSheet;
 exports.onExamResultCreated = onExamResultCreated;
 exports.syncUsersFromSheet = syncUsersFromSheet;
+exports.syncStudentsFromSheet = syncStudentsFromSheet;
 exports.sheetLogin = sheetLogin;

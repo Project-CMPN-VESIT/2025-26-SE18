@@ -16,9 +16,11 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   bool _syncing = false;
+  bool _syncingStudents = false;
   Map<String, dynamic>? _syncResult;
+  Map<String, dynamic>? _studentSyncResult;
 
-  Future<void> _syncFromSheet() async {
+  Future<void> _syncUsersFromSheet() async {
     setState(() { _syncing = true; _syncResult = null; });
     try {
       final result = await context.read<DataProvider>().syncUsersFromSheet();
@@ -26,6 +28,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
     } catch (e) {
       if (mounted) {
         setState(() { _syncing = false; _syncResult = {'message': 'Error: $e'}; });
+      }
+    }
+  }
+
+  Future<void> _syncStudentsFromSheet() async {
+    setState(() { _syncingStudents = true; _studentSyncResult = null; });
+    try {
+      final result = await context.read<DataProvider>().syncStudentsFromSheet();
+      if (mounted) setState(() { _syncingStudents = false; _studentSyncResult = result; });
+    } catch (e) {
+      if (mounted) {
+        setState(() { _syncingStudents = false; _studentSyncResult = {'message': 'Error: $e'}; });
       }
     }
   }
@@ -42,14 +56,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
         Container(
           width: double.infinity,
           decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF0F1B3E), AppTheme.primary])),
-          padding: const EdgeInsets.fromLTRB(20, 48, 20, 24),
+          padding: const EdgeInsets.fromLTRB(20, 36, 20, 16),
           child: Column(children: [
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('$dateStr · ${auth.loginTime ?? ''}', style: TextStyle(color: Colors.blue[200]!.withValues(alpha: 0.8), fontSize: 14)),
                 const SizedBox(height: 4),
                 Text('Welcome, ${auth.user?['name'] ?? ''}', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12)),
@@ -65,7 +79,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 child: Container(width: 40, height: 40, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withValues(alpha: 0.1)), child: const Icon(Icons.logout, color: Colors.white, size: 20)),
               ),
             ]),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Row(children: [
               _adminStat('${data.zones.length}', 'Zones', Icons.map),
               const SizedBox(width: 8),
@@ -76,92 +90,41 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ]),
         ),
         Expanded(child: SingleChildScrollView(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // ─── Google Sheet Sync Card ───
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft, end: Alignment.bottomRight,
-                colors: [const Color(0xFF10B981).withValues(alpha: 0.08), const Color(0xFF3B82F6).withValues(alpha: 0.08)],
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-            ),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: const Color(0xFF10B981).withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.cloud_sync, color: Color(0xFF10B981), size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('User Directory Sync', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
-                  Text('Import users from Google Sheet → Firebase', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
-                ])),
-              ]),
-              const SizedBox(height: 14),
-              Text(
-                'Add new teachers, coordinators, or admins in the NGO User Directory Google Sheet, then tap Sync to create their accounts automatically.',
-                style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), height: 1.5),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity, height: 44,
-                child: ElevatedButton.icon(
-                  onPressed: _syncing ? null : _syncFromSheet,
-                  icon: _syncing
-                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.sync, size: 18),
-                  label: Text(_syncing ? 'Syncing...' : 'Sync from Google Sheet'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF10B981),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ),
+          // ─── Google Sheet Sync Cards ───
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // User Sync Card
+              Expanded(
+                child: _syncCard(
+                  title: 'Staff Sync',
+                  subtitle: 'Users directory',
+                  description: 'Sync NGO User Directory sheet to Firebase Auth.',
+                  icon: Icons.person_pin_rounded,
+                  color: const Color(0xFF10B981),
+                  syncing: _syncing,
+                  onSync: _syncUsersFromSheet,
+                  result: _syncResult,
+                  isDark: isDark,
                 ),
               ),
-              // ─── Sync Result Banner ───
-              if (_syncResult != null) ...[
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: (_syncResult!['created'] ?? 0) > 0
-                      ? const Color(0xFFECFDF5)
-                      : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: (_syncResult!['created'] ?? 0) > 0 ? const Color(0xFF6EE7B7) : const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Icon(
-                        (_syncResult!['created'] ?? 0) > 0 ? Icons.check_circle : Icons.info_outline,
-                        size: 16,
-                        color: (_syncResult!['created'] ?? 0) > 0 ? const Color(0xFF10B981) : const Color(0xFF64748B),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _syncResult!['message']?.toString() ?? 'Sync complete',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white : const Color(0xFF1E293B)),
-                      ),
-                    ]),
-                    const SizedBox(height: 6),
-                    Text(
-                      '✅ Created: ${_syncResult!['created'] ?? 0}  ·  ⏭ Skipped: ${_syncResult!['skipped'] ?? 0}',
-                      style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF475569)),
-                    ),
-                    if (_syncResult!['errors'] != null && (_syncResult!['errors'] as List).isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        '⚠ ${(_syncResult!['errors'] as List).join(', ')}',
-                        style: const TextStyle(fontSize: 11, color: Color(0xFFEF4444)),
-                      ),
-                    ],
-                  ]),
+              const SizedBox(width: 12),
+              // Student Sync Card
+              Expanded(
+                child: _syncCard(
+                  title: 'Student Sync',
+                  subtitle: 'Student records',
+                  description: 'Update student data from zonal Google Sheets.',
+                  icon: Icons.school_rounded,
+                  color: const Color(0xFF3B82F6),
+                  syncing: _syncingStudents,
+                  onSync: _syncStudentsFromSheet,
+                  result: _studentSyncResult,
+                  isDark: isDark,
+                  isStudent: true,
                 ),
-              ],
-            ]),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
 
@@ -189,13 +152,87 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Widget _syncCard({
+    required String title,
+    required String subtitle,
+    required String description,
+    required IconData icon,
+    required Color color,
+    required bool syncing,
+    required VoidCallback onSync,
+    required Map<String, dynamic>? result,
+    required bool isDark,
+    bool isStudent = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E293B) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10)],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+              Text(subtitle, style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
+            ])),
+          ]),
+          const SizedBox(height: 12),
+          Text(description, style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B), height: 1.4)),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity, height: 38,
+            child: ElevatedButton(
+              onPressed: syncing ? null : onSync,
+              style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+              child: syncing
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Sync Now', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+            ),
+          ),
+          if (result != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: color.withValues(alpha: 0.05), borderRadius: BorderRadius.circular(8)),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (isStudent) ...[
+                  Text('Centres: ${result['syncedCentres'] ?? 0}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+                  Text('Students: ${result['syncedStudents'] ?? 0}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+                ] else ...[
+                  Text('Created: ${result['created'] ?? 0}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+                  Text('Skipped: ${result['skipped'] ?? 0}', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
+                ],
+                if (result['message'] != null)
+                   Padding(
+                     padding: const EdgeInsets.only(top: 4),
+                     child: Text(result['message'], style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
+                   ),
+              ]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _adminStat(String value, String label, IconData icon) => Expanded(
     child: Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
       child: Column(children: [
         Icon(icon, color: Colors.blue[200], size: 18),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(value, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
         Text(label.toUpperCase(), style: TextStyle(color: Colors.blue[200]!.withValues(alpha: 0.7), fontSize: 8, fontWeight: FontWeight.w600)),
       ]),

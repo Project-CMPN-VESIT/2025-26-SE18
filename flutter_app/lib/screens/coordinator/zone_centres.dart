@@ -23,8 +23,7 @@ class ZoneCentres extends StatelessWidget {
           ...data.centres.map((c) {
             final centreName = c['name'] as String;
             final teacherCount = data.teachers.where((t) => t['centre'] == centreName).length;
-            final sheetStudents = c['totalStudents'];
-            final displayStudents = (sheetStudents is int) ? sheetStudents : (int.tryParse(sheetStudents?.toString() ?? '0') ?? 0);
+            final displayStudents = data.students.where((s) => s['centre'] == centreName).length;
             final address = c['address']?.toString() ?? 'Address not available';
 
             return GestureDetector(

@@ -13,6 +13,12 @@ exports.onStudentCreated = onDocumentCreated("students/{studentId}", async (even
 
   const student = snapshot.data();
 
+  // If this student was just synced FROM Google Sheets, don't try to add them back
+  if (student.lastSyncSource === "google_sheets") {
+    console.log(`Skipping onStudentCreated for ${student.name} (Source: Google Sheets Sync)`);
+    return null;
+  }
+
   console.log("New student created:", {
     name: student.name,
     roll: student.roll,

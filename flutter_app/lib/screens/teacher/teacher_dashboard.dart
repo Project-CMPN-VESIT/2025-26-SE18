@@ -73,6 +73,46 @@ class TeacherDashboard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ─── Announcements ────────────────────────────────
+                  if (data.announcements.isNotEmpty) ...[
+                    ...data.announcements.map((ann) {
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [Color(0xFFE11D48), Color(0xFFBE123C)]), // Crimson
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [BoxShadow(color: const Color(0xFFE11D48).withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 4))],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.campaign, color: Colors.white, size: 28),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('ZONAL BROADCAST', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11, letterSpacing: 1.2)),
+                                    ]
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(ann['message'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 15)),
+                                  const SizedBox(height: 8),
+                                  Text('— ${ann['authorName'] ?? 'Coordinator'}', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontStyle: FontStyle.italic)),
+                                ]
+                              )
+                            )
+                          ]
+                        ),
+                      );
+                    }).toList(),
+                    const SizedBox(height: 16),
+                  ],
+
                   // ─── Leave Notifications ────────────────────────
                   if (approvedOrDenied.isNotEmpty || pending.isNotEmpty) ...[
                     Row(

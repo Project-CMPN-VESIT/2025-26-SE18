@@ -15,7 +15,6 @@ import '../screens/coordinator/add_student.dart' as coord_student;
 import '../screens/coordinator/zone_centres.dart';
 import '../screens/coordinator/analytics.dart';
 import '../screens/coordinator/leave_approvals.dart';
-import '../screens/coordinator/reports.dart';
 import '../screens/admin/admin_dashboard.dart';
 import '../screens/admin/user_management.dart';
 import '../screens/admin/zones_centres.dart';
@@ -67,8 +66,6 @@ GoRouter createRouter(AppAuthProvider authProvider) {
       GoRoute(path: '/coordinator/centres', builder: (context, state) => const ZoneCentres()),
       GoRoute(path: '/coordinator/analytics', builder: (context, state) => const AnalyticsScreen()),
       GoRoute(path: '/coordinator/leaves', builder: (context, state) => const LeaveApprovals()),
-      GoRoute(path: '/coordinator/reports', builder: (context, state) => const ReportsScreen()),
-
       // Admin routes
       GoRoute(path: '/admin', builder: (context, state) => const AdminDashboard()),
       GoRoute(path: '/admin/users', builder: (context, state) => const UserManagement()),

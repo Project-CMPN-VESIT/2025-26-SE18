@@ -1,5 +1,6 @@
 const { google } = require("googleapis");
 const path = require("path");
+const fs = require("fs");
 const { getFirestore } = require("firebase-admin/firestore");
 
 // ─── Configuration ───────────────────────────────────────────────
@@ -12,8 +13,13 @@ let _sheetsClient = null;
 async function getSheetsClient() {
   if (_sheetsClient) return _sheetsClient;
 
+  const keyPath = path.join(__dirname, "..", "..", "service-account.json");
+  if (!fs.existsSync(keyPath)) {
+    throw new Error(`Service account file not found at: ${keyPath}. Please ensure it exists in backend/functions/`);
+  }
+
   const auth = new google.auth.GoogleAuth({
-    keyFile: path.join(__dirname, "..", "..", "service-account.json"),
+    keyFile: keyPath,
     scopes: SCOPES,
   });
 
@@ -527,7 +533,12 @@ async function addUserRow({ name, email, password, phone, role, zone, centre }) 
  */
 async function readUsersFromSheet() {
   await ensureUsersTab();
-  const sheets = await getSheetsClient();
+  let sheets;
+  try {
+    sheets = await getSheetsClient();
+  } catch (e) {
+    throw new Error(`Google Sheets Auth failed: ${e.message}. (Did you add service-account.json?)`);
+  }
 
   try {
     const res = await sheets.spreadsheets.values.get({
@@ -535,9 +546,8 @@ async function readUsersFromSheet() {
       range: `'${USERS_TAB}'`,
     });
     const rows = res.data.values || [];
-    if (rows.length <= 1) return []; // Only header or empty
+    if (rows.length <= 1) return [];
 
-    // Skip header row (index 0)
     return rows.slice(1).filter((r) => r[1]).map((r) => ({
       name: r[0] || "",
       email: r[1] || "",
@@ -549,8 +559,13 @@ async function readUsersFromSheet() {
       createdAt: r[7] || "",
     }));
   } catch (e) {
-    console.error("Error reading Users Directory:", e.message);
-    return [];
+    if (e.code === 404 || e.message.includes("not found")) {
+      throw new Error(`Spreadsheet not found (ID: ${USERS_SPREADSHEET_ID}).`);
+    }
+    if (e.code === 403) {
+      throw new Error(`Permission denied for spreadsheet (ID: ${USERS_SPREADSHEET_ID}).`);
+    }
+    throw new Error(`Error reading Users Directory: ${e.message}`);
   }
 }
 
@@ -566,62 +581,79 @@ async function readStudentsFromSheet(filterZone, filterCentre) {
   // If a specific zone is filtered, only read that zone's spreadsheet
   const zonesToRead = (filterZone && filterZone !== "All") ? [filterZone] : await getZoneNames();
 
-  for (const zone of zonesToRead) {
+  // Fetch all zone data in parallel
+  const zonePromises = zonesToRead.map(async (zone) => {
     try {
-        const spreadsheetId = await getSpreadsheetId(zone);
-        const tabs = await getExistingTabs(spreadsheetId);
-        const sheets = await getSheetsClient();
+      const spreadsheetId = await getSpreadsheetId(zone);
+      const tabs = await getExistingTabs(spreadsheetId);
+      const sheets = await getSheetsClient();
 
-        for (const tab of tabs) {
-            if (tab === OVERVIEW_TAB) continue;
+      // Fetch all tabs in this zone in parallel
+      const tabPromises = tabs.map(async (tab) => {
+        if (tab === OVERVIEW_TAB) return [];
 
-            const centre = tab.trim();
-            if (filterCentre && filterCentre !== "All" && centre !== filterCentre) continue;
+        const centre = tab.trim();
+        if (filterCentre && filterCentre !== "All" && centre !== filterCentre) return [];
 
-            const res = await sheets.spreadsheets.values.get({
-                spreadsheetId,
-                range: `'${tab}'`,
-            });
-            const rows = res.data.values || [];
-            if (rows.length <= 1) continue;
+        try {
+          const res = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `'${tab}'`,
+          });
+          const rows = res.data.values || [];
+          if (rows.length <= 1) return [];
 
-            const headerRow = rows[0] || [];
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row[0]) continue;
+          const students = [];
+          for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row[0]) continue;
 
-                const attendanceCells = row.slice(3);
-                let presentCount = 0;
-                let totalMarked = 0;
+            const attendanceCells = row.slice(3);
+            let presentCount = 0;
+            let totalMarked = 0;
 
-                for (const status of attendanceCells) {
-                    if (status === "P") {
-                        presentCount++;
-                        totalMarked++;
-                    } else if (status === "A" || status === "D") {
-                        totalMarked++;
-                    }
-                }
-
-                const percentage = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
-
-                allStudents.push({
-                    name: row[0] || "",
-                    roll: row[1] || "",
-                    centre: row[2] || centre,
-                    zone,
-                    status: "active",
-                    class: "",
-                    attendance: totalMarked > 0 ? `${percentage}%` : "0%",
-                });
+            for (const status of attendanceCells) {
+              if (status === "P") {
+                presentCount++;
+                totalMarked++;
+              } else if (status === "A" || status === "D") {
+                totalMarked++;
+              }
             }
-        }
-    } catch (e) {
-        console.error(`Error reading spreadsheet for zone ${zone}:`, e.message);
-    }
-  }
 
-  return allStudents;
+            const percentage = totalMarked > 0 ? Math.round((presentCount / totalMarked) * 100) : 0;
+            const absentCount = totalMarked - presentCount;
+
+            students.push({
+              name: row[0] || "",
+              roll: row[1] || "",
+              centre: row[2] || centre,
+              zone,
+              status: "active",
+              class: "",
+              attendance: totalMarked > 0 ? `${percentage}%` : "0%",
+              presentCount: presentCount,
+              absentCount: absentCount,
+              totalClasses: totalMarked,
+            });
+          }
+          return students;
+        } catch (tabErr) {
+          console.error(`Error reading tab ${tab} in zone ${zone}:`, tabErr.message);
+          return [];
+        }
+      });
+
+      const tabResults = await Promise.all(tabPromises);
+      return tabResults.flat();
+    } catch (e) {
+      console.error(`Error reading spreadsheet for zone ${zone}:`, e.message);
+      return [];
+    }
+  });
+
+  const zoneResults = await Promise.all(zonePromises);
+  return zoneResults.flat();
 }
 
 /**
