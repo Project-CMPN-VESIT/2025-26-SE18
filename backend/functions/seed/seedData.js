@@ -16,7 +16,7 @@ const { getAuth } = require("firebase-admin/auth");
 
 // Point to emulator if env var is set
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
-  process.env.FIRESTORE_EMULATOR_HOST = "localhost:8086";
+  process.env.FIRESTORE_EMULATOR_HOST = "localhost:8087";
 }
 if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
   process.env.FIREBASE_AUTH_EMULATOR_HOST = "localhost:9099";
@@ -27,14 +27,32 @@ initializeApp({ projectId: "smarteducationanalyticssystem" });
 const db = getFirestore();
 const auth = getAuth();
 
-// ─── Mock Data (mirrors flutter_app/lib/data/mock_data.dart) ────
-
-// ─── Mock Data (Updated for 11 Zonal System) ───────────────────
+// ─── Real NGO Users (from User_Credentials_Log sheet) ───────────
+// password field is stored so sheetLogin's Firestore fallback works locally
 
 const users = [
-  { uid: "teacher-001", email: "teacher@gmail.com", password: "teacher123", role: "teacher", name: "Teacher User", phone: "+91 99876 54321", zone: "Thane", centre: "Tejaswini", status: "active", students: 5 },
-  { uid: "coordinator-001", email: "coordinator@gmail.com", password: "coordinator123", role: "coordinator", name: "Coordinator User", phone: "+91 99876 12345", zone: "Thane", status: "active", centres: 10, teachers: 5, students: 50 },
-  { uid: "admin-001", email: "admin@gmail.com", password: "admin123", role: "admin", name: "Admin User", phone: "+91 99876 00000", zone: "All", status: "active" },
+  // Admin
+  { uid: "admin-001", email: "admin@ngo.org", password: "admin123", role: "admin", name: "Admin User", phone: "1234567890", zone: "", centre: "", status: "active" },
+
+  // Coordinators
+  { uid: "coord-boisar-001", email: "coord.boisar@ngo.org", password: "coord123", role: "coordinator", name: "Chetan Modak", phone: "9876543210", zone: "Boisar", centre: "", status: "active", centres: 0, teachers: 0, students: 0 },
+  { uid: "coord-thane-001", email: "coord.thane@ngo.org", password: "coord123", role: "coordinator", name: "Thane Coordinator", phone: "2223334444", zone: "Thane", centre: "", status: "active", centres: 0, teachers: 0, students: 0 },
+  { uid: "coord-nkarjat-001", email: "coord.nkarjat@ngo.org", password: "coord123", role: "coordinator", name: "Karjat Coordinator", phone: "3334445555", zone: "New Karjat", centre: "", status: "active", centres: 0, teachers: 0, students: 0 },
+  { uid: "coord-saphale-001", email: "coord.saphale@ngo.org", password: "coord123", role: "coordinator", name: "Saphale Coordinator", phone: "4445556666", zone: "Saphale", centre: "", status: "active", centres: 0, teachers: 0, students: 0 },
+  { uid: "coord-eastern-001", email: "coord.eastern@ngo.org", password: "coord123", role: "coordinator", name: "Eastern Coordinator", phone: "5556667777", zone: "Eastern Mumbai", centre: "", status: "active", centres: 0, teachers: 0, students: 0 },
+
+  // Teachers
+  { uid: "teacher-shivpratap-p-001", email: "teacher.shivpratap.p@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Shivpratap P", phone: "1112223333", zone: "Boisar", centre: "Shivpratap (Primary)", status: "active", students: 0 },
+  { uid: "teacher-shivpratap-s-001", email: "teacher.shivpratap.s@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Shivpratap S", phone: "4445556666", zone: "Boisar", centre: "Shivpratap (Secondary)", status: "active", students: 0 },
+  { uid: "teacher-tejaswini-001", email: "teacher.tejaswini@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Tejaswini", phone: "5556667777", zone: "Thane", centre: "Tejaswini", status: "active", students: 0 },
+  { uid: "teacher-mirabai-001", email: "teacher.mirabai@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Mirabai", phone: "8889990000", zone: "Thane", centre: "Mirabai", status: "active", students: 0 },
+  { uid: "teacher-karla-001", email: "teacher.karla@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Karla", phone: "6667778888", zone: "New Karjat", centre: "Karla Abhyasika", status: "active", students: 0 },
+  { uid: "teacher-ajintha-001", email: "teacher.ajintha@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Ajintha", phone: "9990001111", zone: "New Karjat", centre: "Ajintha Abhyasika", status: "active", students: 0 },
+  { uid: "teacher-surya-001", email: "teacher.surya@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Surya", phone: "7778889999", zone: "Saphale", centre: "Surya", status: "active", students: 0 },
+  { uid: "teacher-gajanan-001", email: "teacher.gajanan@ngo.org", password: "teacher123", role: "teacher", name: "Teacher Gajanan", phone: "0001112222", zone: "Eastern Mumbai", centre: "Gajanan", status: "active", students: 0 },
+
+  // Test coordinator
+  { uid: "coord-test3-001", email: "test3@gmail.com", password: "test1123", role: "coordinator", name: "test coordinator", phone: "1234567890", zone: "", centre: "", status: "active", centres: 0, teachers: 0, students: 0 },
 ];
 
 const zones = [
@@ -143,8 +161,8 @@ async function seedUsers() {
         }
       }
 
-      // ALWAYS write/update Firestore profile (even if auth user existed)
-      const { password: _password, uid, ...profile } = user;
+      // ALWAYS write/update Firestore profile (including password for local fallback)
+      const { uid, ...profile } = user;
       await db.collection("users").doc(uid).set({
         ...profile,
         createdAt: new Date().toISOString(),
@@ -162,7 +180,7 @@ async function seed() {
   const forceFlag = process.argv.includes("--force");
   if (!forceFlag) {
     try {
-      const existingUser = await auth.getUserByEmail("admin@gmail.com");
+      const existingUser = await auth.getUserByEmail("admin@ngo.org");
       if (existingUser) {
         console.log("⚠ Data already exists (admin user found). Skipping seed to preserve your data.");
         console.log("  To force re-seed, run: npm run seed -- --force");

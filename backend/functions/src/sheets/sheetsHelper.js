@@ -459,7 +459,7 @@ function columnToLetter(col) {
 // ─── Users Directory (SEPARATE SHEET — admin only) ───────────────
 
 const USERS_SPREADSHEET_ID = "1TcZQQlB4Q0i7YbbNn9nDxnlapdz7YJDNnxj7IMNbB28";
-const USERS_TAB = "Sheet1";
+const USERS_TAB = "User_Credentials_Log";
 
 /**
  * Ensure the Users Directory sheet has headers on the first row.

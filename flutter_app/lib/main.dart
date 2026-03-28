@@ -24,7 +24,7 @@ void main() async {
     try {
       // Use explicit loopback IP to avoid hostname/origin quirks in web browsers.
       await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8086);
+      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8087);
       FirebaseFunctions.instance.useFunctionsEmulator('127.0.0.1', 5001);
       debugPrint('✅ Connected to Firebase emulators');
     } catch (e) {
