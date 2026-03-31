@@ -1,13 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DataProvider extends ChangeNotifier {
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final SupabaseClient _supabase = Supabase.instance.client;
 
-  // Local cache populated by Firestore streams
+  // Local cache (Supabase uses polling/realtime channels instead of snapshots)
   List<Map<String, dynamic>> _students = [];
   List<Map<String, dynamic>> _teachers = [];
   List<Map<String, dynamic>> _coordinators = [];
@@ -22,8 +20,8 @@ class DataProvider extends ChangeNotifier {
   bool _isLoading = true;
   bool _initialized = false;
 
-  // Stream subscriptions
-  final List<StreamSubscription> _subscriptions = [];
+  // Realtime channel subscriptions
+  RealtimeChannel? _realtimeChannel;
 
   // Getters
   List<Map<String, dynamic>> get students => _students;
@@ -38,372 +36,539 @@ class DataProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get announcements => _announcements;
   bool get isLoading => _isLoading;
 
-  /// Initialize Firestore listeners scoped by role.
-  /// Call this after login with the user's uid, role, and zone.
-  void init(String uid, String role, String? zone, String? centre) {
+  /// Initialize data — call after login with the user's uid, role, zone, centre.
+  Future<void> init(
+      String uid, String role, String? zone, String? centre) async {
     if (_initialized) return;
     _initialized = true;
     _isLoading = true;
+    notifyListeners();
 
-    // Track how many streams have emitted their first value
-    int streamsReady = 0;
-    const totalStreams = 10;
-    void onStreamReady() {
-      streamsReady++;
-      if (streamsReady >= totalStreams) {
-        _isLoading = false;
-      }
-      notifyListeners();
-    }
+    await _fetchAll(uid, role, zone, centre);
+    _subscribeRealtime(uid, role, zone, centre);
 
-    // ─── Students ──────────────────────────────────────────────────
-    Query studentsQuery = _db.collection('students');
-    final effectiveZone = (zone != null && zone.isNotEmpty) ? zone : null;
-    final effectiveCentre = (centre != null && centre.isNotEmpty) ? centre : null;
-
-    if (role == 'teacher' && effectiveZone != null) {
-      studentsQuery = studentsQuery.where('zone', isEqualTo: effectiveZone);
-      if (effectiveCentre != null) {
-        studentsQuery = studentsQuery.where('centre', isEqualTo: effectiveCentre);
-      }
-      // Only see students assigned to this teacher
-      studentsQuery = studentsQuery.where('teacherId', isEqualTo: uid);
-    } else if (role == 'coordinator' && effectiveZone != null) {
-      studentsQuery = studentsQuery.where('zone', isEqualTo: effectiveZone);
-    }
-    _subscriptions.add(studentsQuery.snapshots().listen((snap) {
-      _students = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Teachers (from users collection, role=teacher) ────────────
-    Query teachersQuery = _db.collection('users').where('role', isEqualTo: 'teacher');
-    if (role == 'coordinator' && zone != null) {
-      teachersQuery = teachersQuery.where('zone', isEqualTo: zone);
-    }
-    _subscriptions.add(teachersQuery.snapshots().listen((snap) {
-      _teachers = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Coordinators (from users collection, role=coordinator) ────
-    Query coordsQuery = _db.collection('users').where('role', isEqualTo: 'coordinator');
-    _subscriptions.add(coordsQuery.snapshots().listen((snap) {
-      _coordinators = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Leaves ────────────────────────────────────────────────────
-    Query leavesQuery = _db.collection('leaves');
-    if (role == 'teacher') {
-      leavesQuery = leavesQuery.where('userId', isEqualTo: uid);
-    } else if (role == 'coordinator' && zone != null) {
-      leavesQuery = leavesQuery.where('zone', isEqualTo: zone);
-    }
-    _subscriptions.add(leavesQuery.snapshots().listen((snap) {
-      _leaves = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Zones ─────────────────────────────────────────────────────
-    _subscriptions.add(_db.collection('zones').snapshots().listen((snap) {
-      _zones = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Centres ───────────────────────────────────────────────────
-    Query centresQuery = _db.collection('centres');
-    if (role == 'coordinator' && effectiveZone != null) {
-      centresQuery = centresQuery.where('zone', isEqualTo: effectiveZone);
-    }
-    _subscriptions.add(centresQuery.snapshots().listen((snap) {
-      _centres = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Exam Results ──────────────────────────────────────────────
-    Query examsQuery = _db.collection('examResults');
-    if (role == 'teacher') {
-      examsQuery = examsQuery.where('teacherId', isEqualTo: uid);
-    } else if (role == 'coordinator' && effectiveZone != null) {
-      examsQuery = examsQuery.where('zone', isEqualTo: effectiveZone);
-    }
-    _subscriptions.add(examsQuery.snapshots().listen((snap) {
-      _examResults = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Diary Entries ─────────────────────────────────────────────
-    Query diaryQuery = _db.collection('diaryEntries');
-    if (role == 'teacher') {
-      diaryQuery = diaryQuery.where('teacherId', isEqualTo: uid);
-    } else if (role == 'coordinator' && zone != null) {
-      diaryQuery = diaryQuery.where('zone', isEqualTo: zone);
-    }
-    _subscriptions.add(diaryQuery.snapshots().listen((snap) {
-      _diaryEntries = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Resources ─────────────────────────────────────────────────
-    Query resourcesQuery = _db.collection('resources');
-    if (role == 'teacher') {
-      resourcesQuery = resourcesQuery.where('teacherId', isEqualTo: uid);
-    }
-    _subscriptions.add(resourcesQuery.snapshots().listen((snap) {
-      _resources = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
-
-    // ─── Announcements ────────────────────────────────────────────
-    Query announcementsQuery = _db.collection('announcements');
-    if (role == 'teacher' || role == 'coordinator') {
-      if (effectiveZone != null) announcementsQuery = announcementsQuery.where('zone', isEqualTo: effectiveZone);
-    }
-    // Limit to 5 most recent
-    announcementsQuery = announcementsQuery.orderBy('createdAt', descending: true).limit(5);
-    _subscriptions.add(announcementsQuery.snapshots().listen((snap) {
-      _announcements = snap.docs.map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>}).toList();
-      onStreamReady();
-    }));
+    _isLoading = false;
+    notifyListeners();
   }
 
-  // ─── CRUD Methods ──────────────────────────────────────────────
+  Future<void> _fetchAll(
+      String uid, String role, String? zone, String? centre) async {
+    await Future.wait([
+      _fetchStudents(uid, role, zone, centre),
+      _fetchTeachers(role, zone),
+      _fetchCoordinators(),
+      _fetchLeaves(uid, role, zone),
+      _fetchZones(),
+      _fetchCentres(role, zone),
+      _fetchExamResults(uid, role, zone),
+      _fetchDiaryEntries(uid, role, zone),
+      _fetchResources(uid, role),
+      _fetchAnnouncements(role, zone),
+    ]);
+  }
+
+  // ─── Fetch Helpers ────────────────────────────────────────────
+
+  Future<void> _fetchStudents(
+      String uid, String role, String? zone, String? centre) async {
+    try {
+      var query = _supabase.from('students').select();
+      if (role == 'teacher') {
+        query = query.eq('teacher_id', uid);
+      } else if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
+        query = query.eq('zone', zone);
+      }
+      final data = await query;
+      _students = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchStudents error: $e');
+    }
+  }
+
+  Future<void> _fetchTeachers(String role, String? zone) async {
+    try {
+      var query = _supabase.from('profiles').select().eq('role', 'teacher');
+      if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
+        query = query.eq('zone', zone);
+      }
+      final data = await query;
+      _teachers = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchTeachers error: $e');
+    }
+  }
+
+  Future<void> _fetchCoordinators() async {
+    try {
+      final data = await _supabase
+          .from('profiles')
+          .select()
+          .eq('role', 'coordinator');
+      _coordinators = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchCoordinators error: $e');
+    }
+  }
+
+  Future<void> _fetchLeaves(
+      String uid, String role, String? zone) async {
+    try {
+      var query = _supabase.from('leaves').select();
+      if (role == 'teacher') {
+        query = query.eq('user_id', uid);
+      } else if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
+        query = query.eq('zone', zone);
+      }
+      final data = await query;
+      _leaves = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchLeaves error: $e');
+    }
+  }
+
+  Future<void> _fetchZones() async {
+    try {
+      final data = await _supabase.from('zones').select();
+      _zones = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchZones error: $e');
+    }
+  }
+
+  Future<void> _fetchCentres(String role, String? zone) async {
+    try {
+      var query = _supabase.from('centres').select();
+      if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
+        query = query.eq('zone', zone);
+      }
+      final data = await query;
+      _centres = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchCentres error: $e');
+    }
+  }
+
+  Future<void> _fetchExamResults(
+      String uid, String role, String? zone) async {
+    try {
+      var query = _supabase.from('exam_results').select();
+      if (role == 'teacher') {
+        query = query.eq('teacher_id', uid);
+      } else if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
+        query = query.eq('zone', zone);
+      }
+      final data = await query;
+      _examResults = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchExamResults error: $e');
+    }
+  }
+
+  Future<void> _fetchDiaryEntries(
+      String uid, String role, String? zone) async {
+    try {
+      var query = _supabase.from('diary_entries').select();
+      if (role == 'teacher') {
+        query = query.eq('teacher_id', uid);
+      } else if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
+        query = query.eq('zone', zone);
+      }
+      final data = await query;
+      _diaryEntries = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchDiaryEntries error: $e');
+    }
+  }
+
+  Future<void> _fetchResources(String uid, String role) async {
+    try {
+      var query = _supabase.from('resources').select();
+      if (role == 'teacher') {
+        query = query.eq('teacher_id', uid);
+      }
+      final data = await query;
+      _resources = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchResources error: $e');
+    }
+  }
+
+  Future<void> _fetchAnnouncements(String role, String? zone) async {
+    try {
+      var query = _supabase.from('announcements').select();
+      
+      if ((role == 'teacher' || role == 'coordinator') &&
+          zone != null &&
+          zone.isNotEmpty) {
+        query = query.or('zone.eq.$zone,zone.is.null');
+      }
+      
+      final data = await query.order('created_at', ascending: false).limit(5);
+      _announcements = List<Map<String, dynamic>>.from(data);
+    } catch (e) {
+      debugPrint('DataProvider: fetchAnnouncements error: $e');
+    }
+  }
+
+  // ─── Realtime Subscription ────────────────────────────────────
+  /// Subscribe to Supabase Realtime for live updates.
+  /// NOTE: Enable Realtime on tables in Supabase Dashboard → Database → Replication.
+  void _subscribeRealtime(
+      String uid, String role, String? zone, String? centre) {
+    _realtimeChannel = _supabase
+        .channel('db_changes')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'students',
+          callback: (_) => _fetchStudents(uid, role, zone, centre)
+              .then((_) => notifyListeners()),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'leaves',
+          callback: (_) =>
+              _fetchLeaves(uid, role, zone).then((_) => notifyListeners()),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'announcements',
+          callback: (_) =>
+              _fetchAnnouncements(role, zone).then((_) => notifyListeners()),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'diary_entries',
+          callback: (_) =>
+              _fetchDiaryEntries(uid, role, zone).then((_) => notifyListeners()),
+        )
+        .subscribe();
+  }
+
+  // ─── CRUD Methods ─────────────────────────────────────────────
 
   Future<void> addStudent(Map<String, dynamic> student) async {
-    await _db.collection('students').add({
-      ...student,
+    // 1. Encrypt Aadhaar if present via new SQL RPC
+    String? encryptedAadhaar;
+    if (student['aadhaar'] != null && student['aadhaar'].toString().isNotEmpty) {
+      try {
+        final res = await _supabase.rpc('encrypt_aadhaar', params: {'aadhaar': student['aadhaar'].toString()});
+        encryptedAadhaar = res.toString();
+      } catch (e) {
+        debugPrint('Encryption error: $e');
+      }
+    }
+
+    // 2. Insert into students table with correct schema keys
+    await _supabase.from('students').insert({
+      'name': student['name'],
+      'roll': student['roll'],
+      'class': student['class'],
+      'centre': student['centre'],
+      'zone': student['zone'],
+      'contact': student['contact'],
+      'aadhaar_encrypted': encryptedAadhaar,
       'status': 'active',
-      'attendance': '0%',
-      'teacherId': student['teacherId'] ?? '',
-      'zone': student['zone'] ?? '',
-      'createdAt': FieldValue.serverTimestamp(),
+      'teacher_id': _supabase.auth.currentUser?.id,
     });
+
+    final uid = _supabase.auth.currentUser?.id ?? '';
+    final role = 'teacher';
+    await _fetchStudents(uid, role, student['zone'], student['centre']);
+    notifyListeners();
   }
 
   Future<void> addTeacher(Map<String, dynamic> teacher) async {
-    final callable = _functions.httpsCallable('createUser');
-    await callable.call(<String, dynamic>{
-      'email': teacher['email'],
-      'password': teacher['password'],
-      'name': teacher['name'],
-      'role': 'teacher',
-      'phone': teacher['phone'] ?? '',
-      'zone': teacher['zone'] ?? '',
-      'centre': teacher['centre'] ?? '',
-    });
+    try {
+      // Call our NEW Supabase Edge Function instead of Firebase
+      final response = await _supabase.functions.invoke(
+        'create-user',
+        headers: {
+          'Authorization': 'Bearer ${_supabase.auth.currentSession?.accessToken}',
+        },
+        body: {
+          'email': teacher['email'],
+          'password': teacher['password'],
+          'name': teacher['name'],
+          'role': 'teacher',
+          'phone': teacher['phone'] ?? '',
+          'zone': teacher['zone'] ?? '',
+          'centre': teacher['centre'] ?? '',
+        },
+      );
+
+      if (response.status != 200) {
+        if (response.status == 401) {
+          throw Exception('Identity Error (401): Ensure you have deployed the "create-user" Edge Function using "supabase functions deploy create-user" and are logged in correctly.');
+        }
+        throw Exception('Failed to create teacher: ${response.data}');
+      }
+
+      await _fetchTeachers('admin', null);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error creating teacher: $e');
+      rethrow;
+    }
   }
 
   Future<void> addCoordinator(Map<String, dynamic> coordinator) async {
-    final callable = _functions.httpsCallable('createUser');
-    await callable.call(<String, dynamic>{
-      'email': coordinator['email'],
-      'password': coordinator['password'],
-      'name': coordinator['name'],
-      'role': 'coordinator',
-      'phone': coordinator['phone'] ?? '',
-      'zone': coordinator['zone'] ?? '',
-    });
+    try {
+      final response = await _supabase.functions.invoke(
+        'create-user',
+        headers: {
+          'Authorization': 'Bearer ${_supabase.auth.currentSession?.accessToken}',
+        },
+        body: {
+          'email': coordinator['email'],
+          'password': coordinator['password'],
+          'name': coordinator['name'],
+          'role': 'coordinator',
+          'phone': coordinator['phone'] ?? '',
+          'zone': coordinator['zone'] ?? '',
+        },
+      );
+
+      if (response.status != 200) {
+        if (response.status == 401) {
+          throw Exception('Identity Error (401): Ensure you have deployed the "create-user" Edge Function using "npx supabase functions deploy create-user" and have logged in freshly.');
+        }
+        throw Exception('Failed to create coordinator: ${response.data}');
+      }
+
+      await _fetchCoordinators();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error creating coordinator: $e');
+      rethrow;
+    }
   }
 
   Future<void> addZone(Map<String, dynamic> zone) async {
-    await _db.collection('zones').add({
+    await _supabase.from('zones').insert({
       ...zone,
       'centres': 0,
       'teachers': 0,
       'students': 0,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
     });
+    await _fetchZones();
+    notifyListeners();
   }
 
   Future<void> addCentre(Map<String, dynamic> centre) async {
-    await _db.collection('centres').add({
+    await _supabase.from('centres').insert({
       ...centre,
       'teachers': 0,
       'students': 0,
       'status': 'active',
-      'createdAt': FieldValue.serverTimestamp(),
     });
 
-    // Update zone's centre count if zoneId is provided
-    if (centre['zoneId'] != null) {
-      await _db.collection('zones').doc(centre['zoneId']).update({
-        'centres': FieldValue.increment(1),
-      });
+    // Update zone's centre count
+    if (centre['zone'] != null) {
+      await _supabase.rpc('increment_zone_centres',
+          params: {'zone_name': centre['zone']});
     }
+    await _fetchCentres('admin', null);
+    notifyListeners();
   }
 
   Future<void> addLeave(Map<String, dynamic> leave) async {
-    await _db.collection('leaves').add({
-      ...leave,
+    final uid = _supabase.auth.currentUser?.id;
+    await _supabase.from('leaves').insert({
+      'user_id': uid,
+      'name': leave['name'],
+      'role': leave['role'],
+      'type': leave['type'],
+      'from_date': leave['fromDate'],
+      'to_date': leave['toDate'],
+      'days': leave['days'],
+      'reason': leave['reason'],
+      'zone': leave['zone'],
       'status': 'pending',
-      'createdAt': FieldValue.serverTimestamp(),
     });
+    await _fetchLeaves(uid ?? '', 'teacher', leave['zone']);
+    notifyListeners();
   }
 
   Future<void> updateLeave(String id, Map<String, dynamic> data) async {
-    await _db.collection('leaves').doc(id).update(data);
+    // Map camelCase to snake_case if necessary
+    final mapped = <String, dynamic>{};
+    if (data.containsKey('status')) mapped['status'] = data['status'];
+    if (data.containsKey('reason')) mapped['reason'] = data['reason'];
+
+    await _supabase.from('leaves').update(mapped).eq('id', id);
+    final uid = _supabase.auth.currentUser?.id ?? '';
+    await _fetchLeaves(uid, 'coordinator', null);
+    notifyListeners();
   }
 
   Future<void> updateStudent(String id, Map<String, dynamic> data) async {
-    await _db.collection('students').doc(id).update(data);
+    await _supabase.from('students').update(data).eq('id', id);
+    notifyListeners();
   }
 
   Future<void> removeStudent(String id) async {
-    await _db.collection('students').doc(id).delete();
+    await _supabase.from('students').delete().eq('id', id);
+    _students.removeWhere((s) => s['id'] == id);
+    notifyListeners();
   }
 
   Future<void> removeTeacher(String id) async {
-    await _db.collection('users').doc(id).delete();
+    await _supabase.from('profiles').delete().eq('id', id);
+    _teachers.removeWhere((t) => t['id'] == id);
+    notifyListeners();
   }
 
   Future<void> addDiaryEntry(Map<String, dynamic> entry) async {
-    await _db.collection('diaryEntries').add({
-      ...entry,
-      'createdAt': FieldValue.serverTimestamp(),
+    final uid = _supabase.auth.currentUser?.id;
+    await _supabase.from('diary_entries').insert({
+      'teacher_id': uid,
+      'title': entry['title'],
+      'body': entry['body'],
+      'category': entry['category'],
+      'time': entry['time'],
+      'date': entry['date'],
+      'zone': entry['zone'],
+      'tags': entry['tags'] ?? [],
     });
+    await _fetchDiaryEntries(uid ?? '', 'teacher', entry['zone']);
+    notifyListeners();
   }
 
   Future<void> updateDiaryEntry(String id, Map<String, dynamic> data) async {
-    await _db.collection('diaryEntries').doc(id).update(data);
+    await _supabase.from('diary_entries').update(data).eq('id', id);
+    notifyListeners();
   }
 
   Future<void> deleteDiaryEntry(String id) async {
-    await _db.collection('diaryEntries').doc(id).delete();
+    await _supabase.from('diary_entries').delete().eq('id', id);
+    _diaryEntries.removeWhere((d) => d['id'] == id);
+    notifyListeners();
   }
 
   Future<void> addResource(Map<String, dynamic> resource) async {
-    await _db.collection('resources').add({
+    final uid = _supabase.auth.currentUser?.id;
+    await _supabase.from('resources').insert({
       ...resource,
-      'createdAt': FieldValue.serverTimestamp(),
+      'teacher_id': uid,
     });
+    await _fetchResources(uid ?? '', 'teacher');
+    notifyListeners();
   }
 
   Future<void> addAttendance(Map<String, dynamic> record) async {
-    await _db.collection('attendance').add({
-      ...record,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-    
-    // Update Student Global Stats & Consecutive Absences Trigger
-    final studentId = record['studentId'];
-    final status = record['status']; 
-    
-    if (studentId != null && studentId.toString().isNotEmpty) {
+    final uid = _supabase.auth.currentUser?.id;
+    await _supabase.from('attendance').upsert({
+      'student_id': record['studentId'],
+      'teacher_id': uid,
+      'date': record['date'],
+      'status': record['status'],
+    }, onConflict: 'student_id,date');
+
+    // Update student counters
+    final studentId = record['student_id']?.toString();
+    final status = record['status']?.toString();
+    if (studentId != null && studentId.isNotEmpty) {
       if (status == 'present') {
-        await _db.collection('students').doc(studentId).set({
-          'presentCount': FieldValue.increment(1),
-          'totalClasses': FieldValue.increment(1),
-          'consecutiveAbsences': 0,
-        }, SetOptions(merge: true));
+        await _supabase.rpc('increment_student_present',
+            params: {'student_uuid': studentId});
       } else if (status == 'absent' || status == 'dropout') {
-        await _db.collection('students').doc(studentId).set({
-          'absentCount': FieldValue.increment(1),
-          'totalClasses': FieldValue.increment(1),
-          'consecutiveAbsences': FieldValue.increment(1),
-        }, SetOptions(merge: true));
+        await _supabase.rpc('increment_student_absent',
+            params: {'student_uuid': studentId});
       }
     }
+    notifyListeners();
   }
 
   Future<void> addExamResult(Map<String, dynamic> exam) async {
-    await _db.collection('examResults').add({
-      ...exam,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    final uid = _supabase.auth.currentUser?.id;
+    final marks = exam['marks'] as List<dynamic>;
+    
+    // Convert bulk marks list into individual rows for the exam_results table
+    final rows = marks.map((m) => {
+      'student_id': m['id'] ?? exam['studentId'], // Handle cases where ID is inside marks or at top level
+      'teacher_id': uid,
+      'name': m['name'] ?? exam['studentName'],
+      'roll': m['roll'] ?? exam['roll'],
+      'zone': exam['zone'],
+      'topic': exam['topic'], // Using 'topic' as the exam name/identifier
+      'total': int.tryParse(m['marks']?.toString() ?? '0'),
+      'date': exam['date'],
+    }).toList();
+
+    await _supabase.from('exam_results').insert(rows);
+    await _fetchExamResults(uid ?? '', 'teacher', exam['zone']);
+    notifyListeners();
   }
 
-  // ─── ANNOUNCEMENTS ──────────────────────────────────────────────
+  // ─── Announcements ────────────────────────────────────────────
 
-  Future<void> addAnnouncement(String message, String zone, String authorId, String authorName) async {
+  Future<void> addAnnouncement(
+      String message, String zone, String authorId, String authorName) async {
     try {
-      await _db.collection('announcements').add({
+      await _supabase.from('announcements').insert({
         'message': message,
         'zone': zone,
-        'authorId': authorId,
-        'authorName': authorName,
-        'createdAt': DateTime.now().toIso8601String(),
+        'author_id': authorId,
+        'author_name': authorName,
       });
+      await _fetchAnnouncements('coordinator', zone);
+      notifyListeners();
     } catch (e) {
-      debugPrint("Error creating announcement: \$e");
+      debugPrint('Error creating announcement: $e');
       rethrow;
     }
   }
 
   Future<void> deleteAnnouncement(String id) async {
     try {
-      await _db.collection('announcements').doc(id).delete();
+      await _supabase.from('announcements').delete().eq('id', id);
+      _announcements.removeWhere((a) => a['id'] == id);
+      notifyListeners();
     } catch (e) {
-      debugPrint("Error deleting announcement: \$e");
+      debugPrint('Error deleting announcement: $e');
       rethrow;
     }
   }
 
-  /// Sync users from Google Sheet → Firebase Auth + Firestore
-  Future<Map<String, dynamic>> syncUsersFromSheet() async {
+  // ─── Data Sync methods (Supabase-native) ──────────────────────
+  // These are now stubs or redirect to local refreshes as Supabase 
+  // handles storage and realtime updates.
+  
+  Future<void> refreshAllData() async {
+    final uid = _supabase.auth.currentUser?.id ?? '';
+    final role = _students.isNotEmpty ? 'teacher' : 'admin'; // Simplified
+    await _fetchAll(uid, role, null, null);
+    notifyListeners();
+  }
+
+  Future<List<Map<String, dynamic>>> fetchStudentsByLocation(
+      {String? zone, String? centre}) async {
     try {
-      final result = await _functions.httpsCallable('syncUsersFromSheet').call({});
-      return Map<String, dynamic>.from(result.data as Map);
+      var query = _supabase.from('students').select();
+      if (zone != null) query = query.eq('zone', zone);
+      if (centre != null) query = query.eq('centre', centre);
+      final data = await query;
+      return List<Map<String, dynamic>>.from(data);
     } catch (e) {
-      return {'created': 0, 'skipped': 0, 'errors': [e.toString()], 'message': 'Error: $e'};
+      debugPrint('DataProvider: fetchStudentsByLocation error: $e');
+      return _students.where((s) => s['zone'] == zone && s['centre'] == centre).toList();
     }
   }
 
-  /// Force manual sync of students from Google Sheet to Firestore
-  Future<Map<String, dynamic>> syncStudentsFromSheet({String? zone, String? centre}) async {
-    try {
-      final callable = _functions.httpsCallable('onStudentCreated');
-      final result = await callable.call({
-        'action': 'forceSync',
-        'zone': zone,
-        'centre': centre
-      });
-      return Map<String, dynamic>.from(result.data as Map);
-    } catch (e) {
-      debugPrint('Error syncing students from sheet: $e');
-      return {'success': false, 'message': e.toString()};
-    }
+  Future<Map<String, dynamic>> fetchAttendanceFromSheet(
+      String zone, String centre) async {
+    return {'headers': [], 'students': []};
   }
 
-  /// Fetch students from Google Sheets via Cloud Function
-  Future<List<Map<String, dynamic>>> fetchStudentsFromSheet({String? zone, String? centre}) async {
-    try {
-      final result = await _functions.httpsCallable('getStudentsFromSheet').call({
-        'zone': zone ?? '',
-        'centre': centre ?? '',
-      });
-      final data = result.data as Map<String, dynamic>;
-      final students = (data['students'] as List<dynamic>?)
-          ?.map((s) => Map<String, dynamic>.from(s as Map))
-          .toList() ?? [];
-      return students;
-    } catch (e) {
-      debugPrint('Error fetching students from sheet: $e');
-      return [];
-    }
-  }
-
-  /// Fetch attendance data from Google Sheets for a specific zone-centre
-  Future<Map<String, dynamic>> fetchAttendanceFromSheet(String zone, String centre) async {
-    try {
-      final result = await _functions.httpsCallable('getAttendanceFromSheet').call({
-        'zone': zone,
-        'centre': centre,
-      });
-      return Map<String, dynamic>.from(result.data as Map);
-    } catch (e) {
-      debugPrint('Error fetching attendance from sheet: $e');
-      return {'headers': [], 'students': []};
-    }
-  }
-
-  /// Reset state on logout
+  // ─── Reset on logout ─────────────────────────────────────────
   void reset() {
-    for (final sub in _subscriptions) {
-      sub.cancel();
-    }
-    _subscriptions.clear();
+    _realtimeChannel?.unsubscribe();
+    _realtimeChannel = null;
     _students = [];
     _teachers = [];
     _coordinators = [];
@@ -413,6 +578,7 @@ class DataProvider extends ChangeNotifier {
     _examResults = [];
     _diaryEntries = [];
     _resources = [];
+    _announcements = [];
     _isLoading = true;
     _initialized = false;
     notifyListeners();
@@ -420,9 +586,7 @@ class DataProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    for (final sub in _subscriptions) {
-      sub.cancel();
-    }
+    _realtimeChannel?.unsubscribe();
     super.dispose();
   }
 }

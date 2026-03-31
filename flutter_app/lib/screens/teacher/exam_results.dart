@@ -53,7 +53,7 @@ class _ExamResultsState extends State<ExamResults> {
     setState(() { _loadingStudents = true; });
     try {
       final dp = context.read<DataProvider>();
-      final students = await dp.fetchStudentsFromSheet(zone: z, centre: c);
+      final students = await dp.fetchStudentsByLocation(zone: z, centre: c);
       // Create controllers for each student
       for (final ctrl in _markControllers.values) {
         ctrl.dispose();
@@ -117,8 +117,6 @@ class _ExamResultsState extends State<ExamResults> {
         'topic': _topicCtrl.text,
         'zone': z,
         'centre': c,
-        'teacherId': auth.uid ?? '',
-        'teacherName': auth.user?['name'] ?? '',
         'marks': marks,
       });
       if (mounted) {
@@ -129,7 +127,7 @@ class _ExamResultsState extends State<ExamResults> {
         }
         setState(() => _showForm = false);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Exam results submitted & syncing to Google Sheet! ✅'),
+          content: const Text('Exam results submitted successfully! ✅'),
           backgroundColor: Colors.green,
         ));
       }
@@ -326,7 +324,7 @@ class _ExamResultsState extends State<ExamResults> {
                             child: ElevatedButton.icon(
                               onPressed: _students.isNotEmpty ? () => _submitExam(effectiveZone, effectiveCentre) : null,
                               icon: const Icon(Icons.cloud_upload),
-                              label: const Text('Submit & Sync to Sheet'),
+                              label: const Text('Submit & Save to Cloud'),
                             ),
                           ),
                         ],

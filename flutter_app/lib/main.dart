@@ -1,11 +1,7 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import 'firebase_options.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/data_provider.dart';
 import 'providers/theme_provider.dart';
@@ -15,25 +11,14 @@ import 'theme/app_theme.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
   );
-
-  // Connect to emulators in debug mode
-  if (kDebugMode) {
-    try {
-      // Use explicit loopback IP to avoid hostname/origin quirks in web browsers.
-      await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
-      FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8087);
-      FirebaseFunctions.instance.useFunctionsEmulator('127.0.0.1', 5001);
-      debugPrint('✅ Connected to Firebase emulators');
-    } catch (e) {
-      debugPrint('⚠️ Could not connect to emulators: $e');
-    }
-  }
 
   runApp(const NGOEducationApp());
 }
+
 
 class NGOEducationApp extends StatefulWidget {
   const NGOEducationApp({super.key});

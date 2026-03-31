@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AppAuthProvider extends ChangeNotifier {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final SupabaseClient _supabase = Supabase.instance.client;
 
   Map<String, String>? _userProfile;
   String? _loginTime;
@@ -16,16 +13,18 @@ class AppAuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _userProfile != null;
   bool get isLoading => _isLoading;
   String? get role => _userProfile?['role'];
-  String? get uid => _auth.currentUser?.uid;
+  String? get uid => _supabase.auth.currentUser?.id;
 
   AppAuthProvider() {
     _init();
   }
 
   void _init() {
-    _auth.authStateChanges().listen((User? firebaseUser) async {
-      if (firebaseUser != null) {
-        await _loadProfile(firebaseUser.uid);
+    // Listen to Supabase auth state changes
+    _supabase.auth.onAuthStateChange.listen((data) async {
+      final session = data.session;
+      if (session != null) {
+        await _loadProfile(session.user.id);
       } else {
         _userProfile = null;
         _loginTime = null;
@@ -33,13 +32,29 @@ class AppAuthProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     });
+
+    // Handle the initial session (e.g. persisted session on app restart)
+    final existingSession = _supabase.auth.currentSession;
+    if (existingSession != null) {
+      _loadProfile(existingSession.user.id).then((_) {
+        _isLoading = false;
+        notifyListeners();
+      });
+    } else {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
   Future<void> _loadProfile(String uid) async {
     try {
-      final doc = await _db.collection('users').doc(uid).get();
-      if (doc.exists) {
-        final data = doc.data()!;
+      final data = await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', uid)
+          .maybeSingle();
+
+      if (data != null) {
         _userProfile = {
           'email': data['email']?.toString() ?? '',
           'role': data['role']?.toString() ?? 'teacher',
@@ -49,19 +64,26 @@ class AppAuthProvider extends ChangeNotifier {
           'uid': uid,
         };
       } else {
-        // Fallback: use Firebase Auth display name
-        final fbUser = _auth.currentUser!;
+        // Fallback: build profile from auth user metadata
+        final authUser = _supabase.auth.currentUser!;
+        final meta = authUser.userMetadata ?? {};
         _userProfile = {
-          'email': fbUser.email ?? '',
-          'role': 'teacher',
-          'name': fbUser.displayName ?? fbUser.email?.split('@')[0] ?? '',
+          'email': authUser.email ?? '',
+          'role': meta['role']?.toString() ?? 'teacher',
+          'name': meta['name']?.toString() ??
+              authUser.email?.split('@')[0] ??
+              '',
+          'zone': meta['zone']?.toString() ?? '',
+          'centre': meta['centre']?.toString() ?? '',
           'uid': uid,
         };
       }
+
       final now = TimeOfDay.now();
       final hour = now.hourOfPeriod == 0 ? 12 : now.hourOfPeriod;
       final period = now.period == DayPeriod.am ? 'AM' : 'PM';
-      _loginTime = '${hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} $period';
+      _loginTime =
+          '${hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')} $period';
     } catch (e) {
       debugPrint('Error loading user profile: $e');
       _userProfile = null;
@@ -70,60 +92,44 @@ class AppAuthProvider extends ChangeNotifier {
 
   Future<Map<String, dynamic>> login(String email, String password) async {
     try {
-      // 1) Validate against NGO User Directory Google Sheet via Cloud Function.
-      final callable = FirebaseFunctions.instance.httpsCallable('sheetLogin');
-      final sheetResult = await callable.call(<String, dynamic>{
-        'email': email,
-        'password': password,
-      });
-
-      final data = Map<String, dynamic>.from(sheetResult.data as Map);
-      if (data['success'] != true) {
-        final message = data['message']?.toString() ?? 'Login not allowed.';
-        return {'success': false, 'message': message};
-      }
-
-      // 2) If sheet allows login, sign in with Firebase Auth.
-      // The backend keeps Auth password in sync with the sheet password.
-      final credential = await _auth.signInWithEmailAndPassword(
-        email: email,
+      final response = await _supabase.auth.signInWithPassword(
+        email: email.trim().toLowerCase(),
         password: password,
       );
 
-      // 3) Load Firestore profile (created/updated server-side) and set state.
-      await _loadProfile(credential.user!.uid);
+      if (response.user == null) {
+        return {'success': false, 'message': 'Login failed. Please try again.'};
+      }
+
+      await _loadProfile(response.user!.id);
       notifyListeners();
 
       return {'success': true, 'role': _userProfile?['role'] ?? 'teacher'};
-    } on FirebaseAuthException catch (e) {
+    } on AuthException catch (e) {
       String message;
-      switch (e.code) {
-        case 'user-not-found':
-          message = 'No account found with this email.';
+      switch (e.statusCode) {
+        case '400':
+          message = 'Invalid email or password.';
           break;
-        case 'wrong-password':
-          message = 'Incorrect password. Please try again.';
-          break;
-        case 'invalid-email':
+        case '422':
           message = 'Please enter a valid email address.';
           break;
-        case 'user-disabled':
-          message = 'This account has been disabled.';
-          break;
-        case 'invalid-credential':
-          message = 'Invalid credentials. Please try again.';
-          break;
         default:
-          message = e.message ?? 'Login failed. Please try again.';
+          message = e.message.isNotEmpty
+              ? e.message
+              : 'Login failed. Please try again.';
       }
       return {'success': false, 'message': message};
     } catch (e) {
-      return {'success': false, 'message': 'Connection error. Are the Firebase emulators running?'};
+      return {
+        'success': false,
+        'message': 'Connection error. Please check your internet connection.'
+      };
     }
   }
 
   Future<void> logout() async {
-    await _auth.signOut();
+    await _supabase.auth.signOut();
     _userProfile = null;
     _loginTime = null;
     notifyListeners();

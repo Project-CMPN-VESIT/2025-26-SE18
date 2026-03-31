@@ -1,0 +1,163 @@
+-- ============================================================
+--  Seva-Sahyog Education Platform — Initial Schema
+--  Migration: 001_initial_schema.sql
+--  Apply in: Supabase Dashboard > SQL Editor
+-- ============================================================
+
+-- ── User Profiles (mirrors Supabase Auth users) ──────────────
+create table if not exists public.profiles (
+  id          uuid references auth.users(id) on delete cascade primary key,
+  email       text not null,
+  name        text,
+  role        text not null default 'teacher'
+                check (role in ('admin', 'coordinator', 'teacher')),
+  zone        text default '',
+  centre      text default '',
+  phone       text default '',
+  status      text not null default 'active',
+  created_at  timestamptz not null default now()
+);
+
+-- ── Zones ────────────────────────────────────────────────────
+create table if not exists public.zones (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null unique,
+  coordinator text default 'Pending',
+  centres     int  not null default 0,
+  teachers    int  not null default 0,
+  students    int  not null default 0,
+  status      text not null default 'active',
+  created_at  timestamptz not null default now()
+);
+
+-- ── Centres ──────────────────────────────────────────────────
+create table if not exists public.centres (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  zone        text not null,
+  address     text default '',
+  teachers    int  not null default 0,
+  students    int  not null default 0,
+  status      text not null default 'active',
+  created_at  timestamptz not null default now(),
+  unique (name, zone)
+);
+
+-- ── Students ─────────────────────────────────────────────────
+create table if not exists public.students (
+  id                   uuid primary key default gen_random_uuid(),
+  name                 text not null,
+  roll                 text unique,
+  class                text,
+  centre               text,
+  zone                 text,
+  teacher_id           uuid references public.profiles(id) on delete set null,
+  status               text not null default 'active',
+  aadhaar_encrypted    text,
+  present_count        int  not null default 0,
+  absent_count         int  not null default 0,
+  total_classes        int  not null default 0,
+  consecutive_absences int  not null default 0,
+  created_at           timestamptz not null default now()
+);
+
+-- ── Attendance ───────────────────────────────────────────────
+create table if not exists public.attendance (
+  id          uuid primary key default gen_random_uuid(),
+  student_id  uuid references public.students(id) on delete cascade,
+  teacher_id  uuid references public.profiles(id) on delete set null,
+  date        date not null,
+  status      text not null check (status in ('present', 'absent', 'late', 'dropout')),
+  created_at  timestamptz not null default now(),
+  unique (student_id, date)
+);
+
+-- ── Exam Results ─────────────────────────────────────────────
+create table if not exists public.exam_results (
+  id          uuid primary key default gen_random_uuid(),
+  student_id  uuid references public.students(id) on delete cascade,
+  teacher_id  uuid references public.profiles(id) on delete set null,
+  name        text,
+  roll        text,
+  zone        text,
+  math        int,
+  science     int,
+  english     int,
+  total       int,
+  grade       text,
+  created_at  timestamptz not null default now()
+);
+
+-- ── Leaves ───────────────────────────────────────────────────
+create table if not exists public.leaves (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid references public.profiles(id) on delete cascade,
+  name        text,
+  role        text,
+  type        text,
+  from_date   date,
+  to_date     date,
+  days        int,
+  status      text not null default 'pending'
+                check (status in ('pending', 'approved', 'rejected')),
+  reason      text,
+  zone        text,
+  created_at  timestamptz not null default now()
+);
+
+-- ── Diary Entries ────────────────────────────────────────────
+create table if not exists public.diary_entries (
+  id          uuid primary key default gen_random_uuid(),
+  teacher_id  uuid references public.profiles(id) on delete cascade,
+  title       text not null,
+  body        text,
+  category    text,
+  time        text,
+  date        date,
+  tags        text[] default '{}',
+  zone        text,
+  created_at  timestamptz not null default now()
+);
+
+-- ── Resources ────────────────────────────────────────────────
+create table if not exists public.resources (
+  id          uuid primary key default gen_random_uuid(),
+  teacher_id  uuid references public.profiles(id) on delete cascade,
+  name        text not null,
+  type        text,
+  size        text,
+  date        date,
+  subject     text,
+  created_at  timestamptz not null default now()
+);
+
+-- ── Announcements ────────────────────────────────────────────
+create table if not exists public.announcements (
+  id          uuid primary key default gen_random_uuid(),
+  message     text not null,
+  zone        text,
+  author_id   uuid references public.profiles(id) on delete set null,
+  author_name text,
+  created_at  timestamptz not null default now()
+);
+
+-- ── Trigger: auto-create profile on new Auth user ─────────────
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer as $$
+begin
+  insert into public.profiles (id, email, name, role)
+  values (
+    new.id,
+    new.email,
+    coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+    coalesce(new.raw_user_meta_data->>'role', 'teacher')
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();

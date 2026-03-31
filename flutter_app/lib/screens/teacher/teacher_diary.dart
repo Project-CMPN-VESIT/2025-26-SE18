@@ -66,13 +66,12 @@ class _TeacherDiaryState extends State<TeacherDiary> {
         'category': _category,
         'time': DateFormat('hh:mm a').format(now),
         'date': DateFormat('yyyy-MM-dd').format(now),
-        'teacherId': auth.uid ?? '',
       };
 
       if (_editingId != null) {
         await dataProvider.updateDiaryEntry(_editingId!, entryData);
       } else {
-        await dataProvider.addDiaryEntry(entryData);
+        await dataProvider.addDiaryEntry(entryData); // addDiaryEntry automatically appends teacher_id
       }
 
       _titleCtrl.clear();

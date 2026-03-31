@@ -23,7 +23,7 @@ class _MarkAttendanceState extends State<MarkAttendance> {
   String? _zone;
   String? _centre;
 
-  // Students from Google Sheets
+  // Students from Cloud
   List<Map<String, dynamic>> _sheetStudents = [];
   bool _loadingSheetStudents = false;
 
@@ -49,15 +49,15 @@ class _MarkAttendanceState extends State<MarkAttendance> {
         _zone = z;
         _centre = c;
       });
-      _fetchStudentsFromSheet(z, c);
+      _fetchStudentsFromCloud(z, c);
     });
   }
 
-  Future<void> _fetchStudentsFromSheet(String zone, String centre) async {
+  Future<void> _fetchStudentsFromCloud(String zone, String centre) async {
     setState(() { _loadingSheetStudents = true; });
     try {
       final dp = context.read<DataProvider>();
-      final students = await dp.fetchStudentsFromSheet(zone: zone, centre: centre);
+      final students = await dp.fetchStudentsByLocation(zone: zone, centre: centre);
       if (mounted) {
         setState(() { _sheetStudents = students; _loadingSheetStudents = false; _attendance.clear(); });
       }
@@ -138,7 +138,7 @@ class _MarkAttendanceState extends State<MarkAttendance> {
                                     label: 'Zone',
                                     value: _zone ?? _zones.first,
                                     items: _zones,
-                                    onChanged: (v) { setState(() => _zone = v); if (v != null && _centre != null) _fetchStudentsFromSheet(v, _centre!); },
+                                    onChanged: (v) { setState(() => _zone = v); if (v != null && _centre != null) _fetchStudentsFromCloud(v, _centre!); },
                                     isDark: isDark,
                                   )),
                                   const SizedBox(width: 16),
@@ -147,7 +147,7 @@ class _MarkAttendanceState extends State<MarkAttendance> {
                                     label: 'Centre',
                                     value: _centre ?? _centres.first,
                                     items: _centres,
-                                    onChanged: (v) { setState(() => _centre = v); if (_zone != null && v != null) _fetchStudentsFromSheet(_zone!, v); },
+                                    onChanged: (v) { setState(() => _centre = v); if (_zone != null && v != null) _fetchStudentsFromCloud(_zone!, v); },
                                     isDark: isDark,
                                   )),
                                 ],
@@ -442,21 +442,10 @@ class _MarkAttendanceState extends State<MarkAttendance> {
       final dropoutCount = _attendance.values.where((v) => v == 'dropout').length;
 
       for (final entry in _attendance.entries) {
-        final student = students.firstWhere(
-          (s) => (s['id'] ?? s['roll'] ?? '').toString() == entry.key,
-          orElse: () => {'name': 'Unknown', 'centre': _centre ?? '', 'roll': entry.key},
-        );
         await context.read<DataProvider>().addAttendance({
           'studentId': entry.key,
-          'studentName': student['name']?.toString() ?? '',
-          'roll': student['roll']?.toString() ?? entry.key,
           'status': entry.value,
           'date': todayStr,
-          'startTime': _startTime,
-          'endTime': _endTime,
-          'teacherId': auth.uid ?? '',
-          'centre': _centre ?? student['centre']?.toString() ?? '',
-          'zone': _zone ?? auth.user?['zone'] ?? '',
         });
       }
       if (context.mounted) {

@@ -18,6 +18,7 @@ class _AddStudentState extends State<AddStudent> {
   final _nameCtrl = TextEditingController();
   final _rollCtrl = TextEditingController();
   final _contactCtrl = TextEditingController();
+  final _aadhaarCtrl = TextEditingController();
   String _class = 'Primary';
   String _centre = '';
 
@@ -33,6 +34,7 @@ class _AddStudentState extends State<AddStudent> {
     _nameCtrl.dispose();
     _rollCtrl.dispose();
     _contactCtrl.dispose();
+    _aadhaarCtrl.dispose();
     super.dispose();
   }
 
@@ -47,9 +49,9 @@ class _AddStudentState extends State<AddStudent> {
         'name': _nameCtrl.text,
         'roll': _rollCtrl.text,
         'contact': _contactCtrl.text,
+        'aadhaar': _aadhaarCtrl.text,
         'class': _class,
         'centre': _centre,
-        'teacherId': auth.uid ?? '',
         'zone': auth.user?['zone'] ?? '',
       });
       if (mounted) {
@@ -85,6 +87,8 @@ class _AddStudentState extends State<AddStudent> {
                   )),
                   const SizedBox(height: 16),
                   AppFormField(label: 'Contact Number', child: TextField(controller: _contactCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(hintText: '+91 98765 43210'))),
+                  const SizedBox(height: 16),
+                  AppFormField(label: 'Aadhaar Number (Encrypted)', child: TextField(controller: _aadhaarCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '12-digit number'))),
                   const SizedBox(height: 16),
                   if (context.read<AppAuthProvider>().role != 'teacher')
                     AppFormField(label: 'Centre', child: DropdownButtonFormField<String>(

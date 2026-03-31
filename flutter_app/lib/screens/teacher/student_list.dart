@@ -25,15 +25,15 @@ class _StudentListState extends State<StudentList> {
   @override
   void initState() {
     super.initState();
-    _fetchFromSheet();
+    _fetchFromCloud();
   }
 
-  Future<void> _fetchFromSheet() async {
+  Future<void> _fetchFromCloud() async {
     setState(() { _loadingSheet = true; _sheetError = null; });
     try {
       final auth = context.read<AppAuthProvider>();
       final dp = context.read<DataProvider>();
-      final students = await dp.fetchStudentsFromSheet(
+      final students = await dp.fetchStudentsByLocation(
         zone: auth.user?['zone'],
         centre: auth.user?['centre'],
       );
@@ -80,8 +80,8 @@ class _StudentListState extends State<StudentList> {
                 icon: _loadingSheet
                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary))
                     : const Icon(Icons.cloud_download, color: AppTheme.primary),
-                onPressed: _loadingSheet ? null : _fetchFromSheet,
-                tooltip: 'Refresh from Google Sheets',
+                onPressed: _loadingSheet ? null : _fetchFromCloud,
+                tooltip: 'Refresh from Cloud',
               ),
               IconButton(
                 icon: const Icon(Icons.person_add, color: AppTheme.primary),
@@ -104,7 +104,7 @@ class _StudentListState extends State<StudentList> {
                 children: [
                   Icon(Icons.cloud_done, size: 14, color: Color(0xFF10B981)),
                   SizedBox(width: 6),
-                  Text('Data from Google Sheets', style: TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.w500)),
+                  Text('Data from Cloud Storage', style: TextStyle(fontSize: 11, color: Color(0xFF10B981), fontWeight: FontWeight.w500)),
                 ],
               ),
             ),
