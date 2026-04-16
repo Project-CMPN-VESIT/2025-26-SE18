@@ -11,8 +11,9 @@
     "migrate:exams": "node migrate_from_sheets.js --only=exams"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.49.4",
-    "dotenv": "^16.4.7",
-    "googleapis": "^144.0.0"
+    "@supabase/supabase-js": "^2.103.0",
+    "dotenv": "^16.6.1",
+    "googleapis": "^144.0.0",
+    "xlsx": "^0.18.5"
   }
 }

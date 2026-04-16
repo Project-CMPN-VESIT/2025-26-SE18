@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+// Global key used by auth_provider to navigate to /reset-password on recovery event
+final GlobalKey<NavigatorState> authNavigatorKey = GlobalKey<NavigatorState>();
+
 class AppAuthProvider extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
 
@@ -23,6 +26,14 @@ class AppAuthProvider extends ChangeNotifier {
     // Listen to Supabase auth state changes
     _supabase.auth.onAuthStateChange.listen((data) async {
       final session = data.session;
+      final event   = data.event;
+
+      // Password recovery — navigate to the reset-password screen
+      if (event == AuthChangeEvent.passwordRecovery) {
+        authNavigatorKey.currentState?.pushNamedAndRemoveUntil('/reset-password', (_) => false);
+        return;
+      }
+
       if (session != null) {
         await _loadProfile(session.user.id);
       } else {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/data_provider.dart';
 import '../../theme/app_theme.dart';
@@ -26,6 +27,90 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _showForgotPasswordDialog(BuildContext context) async {
+    final emailCtrl = TextEditingController(text: _emailController.text.trim());
+    String? dialogError;
+    bool sending = false;
+    bool sent = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: !sending,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Row(children: [
+            Icon(Icons.lock_reset, color: AppTheme.primary),
+            SizedBox(width: 8),
+            Text('Reset Password', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ]),
+          content: sent
+            ? const Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.mark_email_read, color: Color(0xFF10B981), size: 48),
+                SizedBox(height: 12),
+                Text(
+                  'Password reset email sent!\nCheck your inbox and follow the link to set a new password.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Color(0xFF475569)),
+                ),
+              ])
+            : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text(
+                  'Enter your registered email address. We will send you a link to reset your password.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    hintText: 'name@example.com',
+                    prefixIcon: const Icon(Icons.mail_outline, color: Color(0xFF94A3B8)),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primary, width: 2)),
+                    errorText: dialogError,
+                  ),
+                ),
+              ]),
+          actions: sent
+            ? [TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Done', style: TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold)))]
+            : [
+                TextButton(onPressed: sending ? null : () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(backgroundColor: AppTheme.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+                  onPressed: sending ? null : () async {
+                    final email = emailCtrl.text.trim();
+                    if (email.isEmpty || !email.contains('@')) {
+                      setDialogState(() => dialogError = 'Enter a valid email.');
+                      return;
+                    }
+                    setDialogState(() { sending = true; dialogError = null; });
+                    try {
+                      await Supabase.instance.client.auth.resetPasswordForEmail(
+                        email,
+                        redirectTo: '${Uri.base.origin}/reset-password',
+                      );
+                      setDialogState(() { sent = true; sending = false; });
+                    } on AuthException catch (e) {
+                      setDialogState(() { dialogError = e.message; sending = false; });
+                    } catch (_) {
+                      setDialogState(() { dialogError = 'Something went wrong. Try again.'; sending = false; });
+                    }
+                  },
+                  child: sending
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Send Reset Email'),
+                ),
+              ],
+        ),
+      ),
+    );
+    emailCtrl.dispose();
   }
 
   Future<void> _handleLogin() async {
@@ -218,6 +303,17 @@ class _LoginScreenState extends State<LoginScreen> {
                               child: _isLoading
                                   ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
                                   : const Text('Sign In'),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          // Forgot Password — for teachers & coordinators only
+                          Center(
+                            child: TextButton(
+                              onPressed: _isLoading ? null : () => _showForgotPasswordDialog(context),
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(color: AppTheme.primary, fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
                             ),
                           ),
                         ],

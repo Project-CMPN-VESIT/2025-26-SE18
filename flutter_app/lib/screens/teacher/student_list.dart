@@ -170,40 +170,73 @@ class _StudentListState extends State<StudentList> {
                     itemCount: filtered.length,
                     itemBuilder: (_, i) {
                       final s = filtered[i];
+                      // Compute attendance % from stored counters
+                      final presentCount = int.tryParse(s['present_count']?.toString() ?? '0') ?? 0;
+                      final totalClasses = int.tryParse(s['total_classes']?.toString() ?? '0') ?? 0;
+                      final absentCount  = int.tryParse(s['absent_count']?.toString()  ?? '0') ?? 0;
+                      final attendancePct = totalClasses > 0
+                          ? (presentCount / totalClasses * 100)
+                          : 0.0;
+                      final attendanceStr = '${attendancePct.toStringAsFixed(1)}%';
+                      final pctColor = attendancePct >= 80
+                          ? const Color(0xFF10B981)
+                          : attendancePct >= 60
+                              ? const Color(0xFFF59E0B)
+                              : Colors.red;
+
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: isDark ? const Color(0xFF1E293B) : Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
                           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 2))],
                         ),
-                        child: Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              width: 40, height: 40,
-                              decoration: BoxDecoration(shape: BoxShape.circle, color: AppTheme.primary.withValues(alpha: 0.1)),
-                              child: Center(child: Text(s['name']?[0] ?? '?', style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.bold))),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(s['name'] ?? '', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
-                                  Text('${s['roll'] ?? ''} · ${s['class'] ?? ''}', style: TextStyle(fontSize: 12, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
-                                  Text('${s['zone'] ?? ''} · ${s['centre'] ?? ''}', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF475569) : const Color(0xFFB0BEC5))),
-                                ],
-                              ),
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
+                            Row(
                               children: [
-                                AttendanceText(value: s['attendance']?.toString() ?? '0%'),
-                                StatusBadge(label: s['status'] ?? 'active', variant: s['status'] ?? 'active'),
+                                Container(
+                                  width: 38, height: 38,
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: pctColor.withValues(alpha: 0.12)),
+                                  child: Center(child: Text(
+                                    (s['name'] ?? '?').toString().isNotEmpty ? (s['name'] as String)[0].toUpperCase() : '?',
+                                    style: TextStyle(color: pctColor, fontWeight: FontWeight.bold, fontSize: 16),
+                                  )),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(s['name'] ?? '', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: isDark ? Colors.white : const Color(0xFF1E293B))),
+                                  Text('${s['roll'] ?? ''} · Class ${s['class'] ?? '-'}', style: TextStyle(fontSize: 11, color: isDark ? const Color(0xFF64748B) : const Color(0xFF94A3B8))),
+                                ])),
+                                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                  Text(attendanceStr, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: pctColor)),
+                                  StatusBadge(label: s['status'] ?? 'active', variant: s['status'] ?? 'active'),
+                                ]),
                               ],
                             ),
+                            if (totalClasses > 0) ...[
+                              const SizedBox(height: 10),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: (attendancePct / 100).clamp(0.0, 1.0),
+                                  minHeight: 5,
+                                  backgroundColor: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9),
+                                  valueColor: AlwaysStoppedAnimation(pctColor),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Row(children: [
+                                _statChip(Icons.check_circle_outline, '$presentCount P', const Color(0xFF10B981), isDark),
+                                const SizedBox(width: 8),
+                                _statChip(Icons.cancel_outlined, '$absentCount A', const Color(0xFFF59E0B), isDark),
+                                const SizedBox(width: 8),
+                                _statChip(Icons.event_note, '$totalClasses total', const Color(0xFF94A3B8), isDark),
+                              ]),
+                            ],
                           ],
                         ),
                       );
@@ -214,6 +247,13 @@ class _StudentListState extends State<StudentList> {
       ),
     );
   }
+
+  Widget _statChip(IconData icon, String label, Color color, bool isDark) =>
+      Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 11, color: color),
+        const SizedBox(width: 3),
+        Text(label, style: TextStyle(fontSize: 10, color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B))),
+      ]);
 
   Widget _buildFilterDropdown({
     required IconData icon,

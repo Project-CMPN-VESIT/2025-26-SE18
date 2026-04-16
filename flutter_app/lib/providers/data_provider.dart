@@ -73,8 +73,8 @@ class DataProvider extends ChangeNotifier {
       String uid, String role, String? zone, String? centre) async {
     try {
       var query = _supabase.from('students').select();
-      if (role == 'teacher') {
-        query = query.eq('teacher_id', uid);
+      if (role == 'teacher' && centre != null && centre.isNotEmpty) {
+        query = query.eq('centre', centre);
       } else if (role == 'coordinator' && zone != null && zone.isNotEmpty) {
         query = query.eq('zone', zone);
       }
@@ -461,27 +461,34 @@ class DataProvider extends ChangeNotifier {
   }
 
   Future<void> addAttendance(Map<String, dynamic> record) async {
-    final uid = _supabase.auth.currentUser?.id;
+    final uid       = _supabase.auth.currentUser?.id;
+    final studentId = record['studentId']?.toString(); // ← was 'student_id' (wrong key)
+
     await _supabase.from('attendance').upsert({
-      'student_id': record['studentId'],
+      'student_id': studentId,
       'teacher_id': uid,
-      'date': record['date'],
-      'status': record['status'],
+      'date':       record['date'],
+      'status':     record['status'],
     }, onConflict: 'student_id,date');
 
-    // Update student counters
-    final studentId = record['student_id']?.toString();
-    final status = record['status']?.toString();
-    if (studentId != null && studentId.isNotEmpty) {
-      if (status == 'present') {
-        await _supabase.rpc('increment_student_present',
-            params: {'student_uuid': studentId});
-      } else if (status == 'absent' || status == 'dropout') {
-        await _supabase.rpc('increment_student_absent',
-            params: {'student_uuid': studentId});
-      }
+    // NOTE: counter updates (present_count, absent_count, total_classes) are now
+    // handled automatically by the DB trigger in run_attendance_trigger.sql.
+    // No manual RPC calls needed here.
+  }
+
+  /// Call this after a full attendance session is submitted so the student list
+  /// in the UI immediately reflects the updated counters.
+  Future<void> refreshStudentsForLocation(String? zone, String? centre) async {
+    try {
+      var query = _supabase.from('students').select();
+      if (zone   != null && zone.isNotEmpty)   query = query.eq('zone',   zone);
+      if (centre != null && centre.isNotEmpty) query = query.eq('centre', centre);
+      final data = await query;
+      _students = List<Map<String, dynamic>>.from(data);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('DataProvider: refreshStudentsForLocation error: $e');
     }
-    notifyListeners();
   }
 
   Future<void> addExamResult(Map<String, dynamic> exam) async {

@@ -1,6 +1,7 @@
 import 'package:go_router/go_router.dart';
 import '../providers/auth_provider.dart';
 import '../screens/auth/login_screen.dart';
+import '../screens/auth/reset_password_screen.dart';
 import '../screens/teacher/teacher_dashboard.dart';
 import '../screens/teacher/mark_attendance.dart';
 import '../screens/teacher/student_list.dart';
@@ -22,6 +23,7 @@ import '../screens/admin/add_zone.dart';
 import '../screens/admin/add_centre.dart';
 import '../screens/admin/leave_management.dart';
 import '../screens/admin/global_analytics.dart';
+import '../screens/admin/attendance_summary.dart';
 import '../screens/admin/add_coordinator.dart';
 import '../screens/admin/add_teacher.dart' as admin_teacher;
 
@@ -30,11 +32,12 @@ GoRouter createRouter(AppAuthProvider authProvider) {
     refreshListenable: authProvider,
     initialLocation: '/login',
     redirect: (context, state) {
-      final isLoggedIn = authProvider.isLoggedIn;
-      final isLoginRoute = state.matchedLocation == '/login';
+      final isLoggedIn     = authProvider.isLoggedIn;
+      final loc            = state.matchedLocation;
+      final isPublicRoute  = loc == '/login' || loc == '/reset-password';
 
-      if (!isLoggedIn && !isLoginRoute) return '/login';
-      if (isLoggedIn && isLoginRoute) {
+      if (!isLoggedIn && !isPublicRoute) return '/login';
+      if (isLoggedIn && loc == '/login') {
         switch (authProvider.role) {
           case 'teacher':
             return '/teacher';
@@ -48,6 +51,7 @@ GoRouter createRouter(AppAuthProvider authProvider) {
     },
     routes: [
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
+      GoRoute(path: '/reset-password', builder: (context, state) => const ResetPasswordScreen()),
 
       // Teacher routes
       GoRoute(path: '/teacher', builder: (context, state) => const TeacherDashboard()),
@@ -74,6 +78,7 @@ GoRouter createRouter(AppAuthProvider authProvider) {
       GoRoute(path: '/admin/centres/add', builder: (context, state) => const AddCentre()),
       GoRoute(path: '/admin/leaves', builder: (context, state) => const LeaveManagement()),
       GoRoute(path: '/admin/analytics', builder: (context, state) => const GlobalAnalytics()),
+      GoRoute(path: '/admin/attendance-summary', builder: (context, state) => const AttendanceSummaryScreen()),
       GoRoute(path: '/admin/add-coordinator', builder: (context, state) => const AddCoordinator()),
       GoRoute(path: '/admin/add-teacher', builder: (context, state) => const admin_teacher.AdminAddTeacher()),
     ],

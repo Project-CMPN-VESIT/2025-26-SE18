@@ -1,7 +1,7 @@
-# 📚 Seva Sahayog — Education Platform
+# 📚 Seva Sahyog — Education Platform
 
 <p align="center">
-  <img src="seva-sahayog.png" alt="Seva Sahayog Logo" width="200"/>
+  <img src="seva-sahyog.png" alt="Seva Sahyog Logo" width="200"/>
 </p>
 
 <p align="center">
@@ -18,103 +18,90 @@
 ---
 
 ## 🧭 Table of Contents
-
 - [About the Project](#-about-the-project)
-- [Modern Architecture](#-modern-architecture)
-- [Core Features](#-core-features)
-- [Tech Stack](#-tech-stack)
-- [Setup Guide](#-setup-guide)
-  - [1. Database Schema](#1-database-schema)
-  - [2. Edge Functions](#2-edge-functions)
-  - [3. Flutter Application](#3-flutter-application)
+- [🚀 Getting Started (Fork & Clone)](#-getting-started-fork--clone)
+- [🏗 Project Structure](#-project-structure)
+- [🛠 Local Setup](#-local-setup)
+- [📊 Data Migration & Seeding](#-data-migration--seeding)
 - [User Roles & Flows](#-user-roles--flows)
 - [Security & Encryption](#-security--encryption)
 
 ---
 
 ## 📖 About the Project
-
-Seva Sahayog is a high-performance management platform designed to streamline NGO operations. By migrating to a **fully serverless, cloud-native architecture on Supabase**, the platform provides instant synchronization, robust security, and a simplified deployment pipeline.
-
-### Core Features
-
-| Feature | Description |
-|---------|-------------|
-| **Role-Based Access** | Secure dashboards for Admin, Coordinator, and Teacher roles. |
-| **Realtime Attendance** | Mark attendance with instant global updates via Supabase Realtime. |
-| **Secure Aadhaar Storage** | Student Aadhaar numbers are **encrypted at rest** using `pgcrypto` in PostgreSQL. |
-| **Administrative Control** | Edge Functions for secure user creation and role assignment. |
-| **Teacher Diary & Resources** | Digital logs for daily activities and cloud storage for teaching materials. |
-| **Automated Analytics** | Zone-wise and centre-wise performance metrics for coordinators. |
+Seva Sahyog is a high-performance management platform designed to streamline NGO operations. By migrating to a **fully serverless, cloud-native architecture on Supabase**, the platform provides instant synchronization, robust security, and a simplified deployment pipeline.
 
 ---
 
-## 🏗 Modern Architecture
+## 🚀 Getting Started (Fork & Clone)
 
-The platform follows a **Clean Cloud-Native** architecture, removing all legacy dependencies on external spreadsheets or middle-tier providers.
+If you want to contribute to this project or set up your own instance for development, follow these steps:
 
-```mermaid
-graph TD
-    A[Flutter Web/Mobile] -->|Auth| B(Supabase Auth)
-    A -->|Queries/Realtime| C(Supabase PostgreSQL)
-    A -->|Admin Actions| D[Supabase Edge Functions]
-    D -->|Service Role| B
-    C -->|pgcrypto| E[Encrypted Aadhaar Storage]
-    A -->|Resources| F[Supabase Storage]
+### 1. Fork the Repository
+Click the **Fork** button at the top right of this page to create your own copy of the repository under your GitHub account.
+
+### 2. Clone the Repository
+Clone your forked repository to your local machine:
+```bash
+git clone https://github.com/YOUR_USERNAME/Seva-Sahyog-Education-Platform.git
+cd Seva-Sahyog-Education-Platform
 ```
 
-### Data Flow — Secure User Creation
-1. Admin enters user details in the Flutter UI.
-2. Flutter invokes the `create-user` **Edge Function** via a secure HTTPS call.
-3. Edge Function uses the `SERVICE_ROLE_KEY` to create an Auth user and initialize the profile.
-4. Database triggers automatically handle metadata and logging.
+### 3. Prerequisites
+Ensure you have the following installed:
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) (latest stable version)
+- [Node.js](https://nodejs.org/) (for running migration and seed scripts)
+- [Supabase CLI](https://supabase.com/docs/guides/cli)
+- [Git](https://git-scm.com/)
 
 ---
 
-## 🛠 Tech Stack
+## 🏗 Project Structure
 
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | Flutter (Provider + GoRouter) |
-| **Backend** | Supabase (PostgreSQL 15+) |
-| **Auth** | Supabase Auth (JWT-based) |
-| **Logic** | Supabase Edge Functions (TypeScript / Deno) |
-| **Storage** | Supabase Storage (Buckets for resources) |
-| **Security** | PostgreSQL RLS + pgcrypto Encryption |
+```text
+.
+├── flutter_app/         # Flutter frontend application (Web/Mobile)
+│   ├── assets/          # Images, logos, and fonts
+│   ├── lib/             # Core Dart logic
+│   │   ├── layouts/     # Role-based dashboard layouts
+│   │   ├── providers/   # State management (Provider)
+│   │   ├── screens/     # UI screens organized by role (Admin, Teacher, etc.)
+│   │   └── widgets/     # Reusable UI components
+├── supabase/            # Backend configuration & logic
+│   ├── migrations/      # SQL schema, RLS policies, and RPC scripts
+│   ├── functions/       # Edge Functions (TypeScript/Deno)
+│   ├── seed_users.js    # Script to populate initial auth users
+│   └── migrate_from_sheets.js  # Script to import spreadsheet data
+└── excel_data/          # Folder for historical data files (Excel/CSV)
+```
 
 ---
 
-## 🚀 Setup Guide
+## 🛠 Local Setup
 
-### 1. Database Schema
-Go to your **Supabase SQL Editor** and apply the migration scripts found in `supabase/migrations/`:
+### 1. Supabase Initialization
+Create a new project on [Supabase.com](https://supabase.com/) and follow these steps:
 
-1.  **`001_initial_schema.sql`**: Core tables (`profiles`, `students`, `attendance`, etc.).
-2.  **`002_row_level_security.sql`**: RLS policies ensuring users only see their own zone's data.
-3.  **`003_rpc_helpers.sql`**: SQL functions for attendance counters.
-4.  **`004_schema_patch.sql`**: Enables `pgcrypto` and Aadhaar encryption functions.
+**Database Schema:**
+Apply migration scripts in `supabase/migrations/` via the SQL Editor:
+1. `001_initial_schema.sql` — Core tables and relationships.
+2. `002_row_level_security.sql` — Zone-based access policies.
+3. `003_rpc_helpers.sql` — Remote Procedure Calls for data fetching.
+4. `004_schema_patch.sql` — Aadhaar encryption setup.
 
-### 2. Edge Functions
-Administrative user creation requires the `create-user` function.
-
+**Edge Functions Deployment:**
 ```powershell
-# 1. Login to Supabase CLI
 npx supabase login
-
-# 2. Link your project 
 npx supabase link --project-ref <your-project-id>
-
-# 3. Deploy the creation logic
 npx supabase functions deploy create-user
 ```
-*Note: Ensure you have your `SUPABASE_SERVICE_ROLE_KEY` added to your Function Secrets in the Supabase Dashboard.*
+*Note: Ensure `SUPABASE_SERVICE_ROLE_KEY` is added to your Project Secrets.*
 
-### 3. Flutter Application
-Configure your environment in `flutter_app/lib/supabase_config.dart`:
-
+### 2. Flutter Configuration
+Configure your credentials in `flutter_app/lib/supabase_config.dart`:
 ```dart
-const String supabaseUrl = 'https://<your-project>.supabase.co';
-const String supabaseAnonKey = 'your-anon-public-key';
+const String supabaseUrl = 'https://YOUR_PROJECT_ID.supabase.co';
+const String supabaseAnonKey = 'YOUR_ANON_PUBLIC_KEY';
 ```
 
 Then run:
@@ -126,33 +113,48 @@ flutter run -d chrome
 
 ---
 
+## 📊 Data Migration & Seeding
+
+The platform includes robust scripts to import existing data from legacy sources.
+
+### Environment Setup
+Create a `.env` file in the `supabase/` directory:
+```env
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_KEY=your-service-role-key
+```
+
+### Running Scripts
+1. **Install dependencies**:
+   ```bash
+   cd supabase
+   npm install
+   ```
+2. **Seed Initial Users**:
+   ```bash
+   npm run seed
+   ```
+3. **Import Spreadsheet Data**:
+   Place source data in `excel_data/` and run:
+   ```bash
+   npm run migrate
+   ```
+
+---
+
 ## 👥 User Roles & Flows
 
-### 🔴 Admin (Super User)
-*   Full visibility across all **11 Zones** and **130+ Centres**.
-*   Creates and manages Coordinators and Teachers.
-*   System-wide analytics and center auditing.
-
-### 🟡 Coordinator (Zone Lead)
-*   Access scoped specifically to their assigned **Zone**.
-*   Approves teacher leave requests.
-*   Broadcasts zone-wide announcements.
-*   Monitors attendance trends for all centers in their zone.
-
-### 🟢 Teacher (Center Lead)
-*   Manages enrollment for their specific **Center**.
-*   Daily attendance marking for assigned students.
-*   Uploads exam results and maintains a daily teacher diary.
-*   Accesses teaching resources from the cloud library.
+- **🔴 Admin (Super User)**: Full visibility across all 11 Zones and 130+ Centres. Manages coordinators and center audits.
+- **🟡 Coordinator (Zone Lead)**: Scoped access to assigned Zone. Approves leave requests and monitors performance.
+- **🟢 Teacher (Center Lead)**: Manages center specific enrollment, daily attendance, and exam results.
 
 ---
 
 ## 🔒 Security & Encryption
 
-The platform prioritizes student data privacy:
-*   **Authentication**: All requests are authenticated via JWT.
-*   **Granular Access**: Row Level Security (RLS) ensures that a teacher from Zone A cannot see data from Zone B.
-*   **Encryption at Rest**: Sensitive Aadhaar data is encrypted at the database level. Even with direct access to the database rows, the data is unreadable without the project's master key.
+- **Aadhaar Protection**: Student Aadhaar numbers are **encrypted at rest** using `pgcrypto`.
+- **Zone Isolation**: Row Level Security (RLS) ensures teachers only access data for their centers.
+- **Service Role Isolation**: Administrative actions are restricted to Edge Functions running with service-level privileges.
 
 ---
 
@@ -160,4 +162,6 @@ The platform prioritizes student data privacy:
   <strong>Seva Sahyog Foundation</strong><br>
   Modern. Secure. Cloud Native.<br>
   Made with ❤️ using Flutter & Supabase
+</p>
+e with ❤️ using Flutter & Supabase
 </p>

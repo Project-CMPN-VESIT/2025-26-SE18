@@ -25,7 +25,7 @@ class _MarkAttendanceState extends State<MarkAttendance> {
 
   // Students from Cloud
   List<Map<String, dynamic>> _sheetStudents = [];
-  bool _loadingSheetStudents = false;
+  bool _loadingSheet = false;
 
   final _timeSlots = [
     '07:00', '07:30', '08:00', '08:30', '09:00', '09:30',
@@ -54,16 +54,16 @@ class _MarkAttendanceState extends State<MarkAttendance> {
   }
 
   Future<void> _fetchStudentsFromCloud(String zone, String centre) async {
-    setState(() { _loadingSheetStudents = true; });
+    setState(() { _loadingSheet = true; });
     try {
       final dp = context.read<DataProvider>();
       final students = await dp.fetchStudentsByLocation(zone: zone, centre: centre);
       if (mounted) {
-        setState(() { _sheetStudents = students; _loadingSheetStudents = false; _attendance.clear(); });
+        setState(() { _sheetStudents = students; _loadingSheet = false; _attendance.clear(); });
       }
     } catch (e) {
       if (mounted) {
-        setState(() { _loadingSheetStudents = false; });
+        setState(() { _loadingSheet = false; });
       }
     }
   }
@@ -253,7 +253,12 @@ class _MarkAttendanceState extends State<MarkAttendance> {
                                       ],
                                     ),
                                   ),
-                                  _buildAttendanceBadge(student['attendance']?.toString() ?? '0%', isDark),
+                                  Builder(builder: (_) {
+                                    final pCnt = int.tryParse(student['present_count']?.toString() ?? '0') ?? 0;
+                                    final tCnt = int.tryParse(student['total_classes']?.toString()  ?? '0') ?? 0;
+                                    final pct  = tCnt > 0 ? '${(pCnt / tCnt * 100).toStringAsFixed(0)}%' : 'N/A';
+                                    return _buildAttendanceBadge(pct, isDark);
+                                  }),
                                 ],
                               ),
                               const SizedBox(height: 12),
@@ -436,28 +441,41 @@ class _MarkAttendanceState extends State<MarkAttendance> {
     }
     try {
       final auth = context.read<AppAuthProvider>();
-      final todayStr = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final dp   = context.read<DataProvider>();
+      final todayStr     = DateFormat('yyyy-MM-dd').format(DateTime.now());
       final presentCount = _attendance.values.where((v) => v == 'present').length;
-      final absentCount = _attendance.values.where((v) => v == 'absent').length;
+      final absentCount  = _attendance.values.where((v) => v == 'absent').length;
       final dropoutCount = _attendance.values.where((v) => v == 'dropout').length;
 
       for (final entry in _attendance.entries) {
-        await context.read<DataProvider>().addAttendance({
+        await dp.addAttendance({
           'studentId': entry.key,
-          'status': entry.value,
-          'date': todayStr,
+          'status':    entry.value,
+          'date':      todayStr,
         });
       }
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Session attendance submitted! P:$presentCount  A:$absentCount  D:$dropoutCount'),
-          backgroundColor: Colors.green,
-        ));
+
+      // Refresh student list so attendance % updates immediately
+      await dp.refreshStudentsForLocation(
+        auth.user?['zone'],
+        auth.user?['centre'],
+      );
+      // Re-fetch for this screen too
+      if (_zone != null && _centre != null) {
+        await _fetchStudentsFromCloud(_zone!, _centre!);
       }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Session submitted! ✓ P:$presentCount  A:$absentCount  D:$dropoutCount'),
+        backgroundColor: Colors.green,
+      ));
+      setState(() => _attendance.clear());
     } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+      );
     }
   }
 
