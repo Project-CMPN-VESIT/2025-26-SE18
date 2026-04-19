@@ -1,7 +1,7 @@
 # 📚 Seva Sahyog — Education Platform
 
 <p align="center">
-  <img src="seva-sahyog.png" alt="Seva Sahyog Logo" width="200"/>
+  <img src="seva-sahayog.png" alt="Seva Sahyog Logo" width="200"/>
 </p>
 
 <p align="center">
@@ -30,6 +30,8 @@
 
 ## 📖 About the Project
 Seva Sahyog is a high-performance management platform designed to streamline NGO operations. By migrating to a **fully serverless, cloud-native architecture on Supabase**, the platform provides instant synchronization, robust security, and a simplified deployment pipeline.
+
+![System architecture and workflow diagram](System%20architecture%20and%20workflow%20diagram.png)
 
 ---
 
