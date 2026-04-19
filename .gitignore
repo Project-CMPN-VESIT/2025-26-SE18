@@ -54,3 +54,9 @@ lib-cov
 ._*
 Thumbs.db
 Desktop.ini
+
+.env*
+*.pem
+*.key
+secrets.json
+local.properties
