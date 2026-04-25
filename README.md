@@ -165,5 +165,3 @@ SUPABASE_SERVICE_KEY=your-service-role-key
   Modern. Secure. Cloud Native.<br>
   Made with ❤️ using Flutter & Supabase
 </p>
-e with ❤️ using Flutter & Supabase
-</p>
